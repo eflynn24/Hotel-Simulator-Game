@@ -8,21 +8,22 @@ namespace DesertLantern
         public static readonly Vector3 ComputerApproach = new Vector3(-10.22f, 0, 6.62f);
         public static readonly Vector3 ComputerScreen = new Vector3(-10.28f, 1.61f, 7.24f);
         public Transform ReceptionComputer { get; private set; }
-        public static Vector3 RoomDoor(int room) => new Vector3(RoomX[room], 0, 6.43f);
-        public static Vector3 BagDrop(int room) => new Vector3(RoomX[room] + .48f, 0, 10.69f);
-        public static Vector3 RackPosition(int room) => new Vector3(RoomX[room] + 1.86f, .57f, 10.68f);
+        public static Vector3 RoomDoor(int room) => new Vector3(RoomX[room], FloorHeight(room), 6.43f);
+        public static Vector3 BagDrop(int room) => new Vector3(RoomX[room] + .48f, FloorHeight(room), 10.69f);
+        public static Vector3 RackPosition(int room) => new Vector3(RoomX[room] + 1.86f, FloorHeight(room) + .57f, 10.68f);
         public static int InteriorRoom(Vector3 position)
         {
             if (position.z < 6.50f || position.z > 13.35f)
                 return -1;
             for (int room = 0; room < RoomX.Length; room++)
-                if (Mathf.Abs(position.x - RoomX[room]) < 2.42f)
+                if (Mathf.Abs(position.x - RoomX[room]) < 2.42f && NearFloor(position, RoomDoor(room)))
                     return room;
             return -1;
         }
 
         private Material siding, oak, trim, linen, runner, carpet, tile, stone, leaf, lamp, dark;
-        private readonly Transform[] roomDoors = new Transform[4];
+        private readonly Light[] roomLighting = new Light[MotelService.RoomCount];
+        private readonly Transform[] roomDoors = new Transform[MotelService.RoomCount];
         private readonly List<Transform> fans = new List<Transform>();
 
         private void CreateFinishes()
@@ -48,7 +49,7 @@ namespace DesertLantern
             Box("Room floor", new Vector3(x, -.04f, 9.91f), new Vector3(4.92f, .10f, 6.92f), carpet, GroundLayer);
             Box("Room back wall", new Vector3(x, 1.45f, 13.30f), new Vector3(5, 2.9f, .15f), plaster, SolidLayer);
             Box("Room west wall", new Vector3(x - 2.43f, 1.45f, 9.89f), new Vector3(.15f, 2.9f, 6.8f), plaster, SolidLayer);
-            if (room == RoomX.Length - 1)
+            if (room == 3 || room == 7 || room == 9 || room == 11)
                 Box("Wing east wall", new Vector3(x + 2.43f, 1.45f, 9.89f), new Vector3(.15f, 2.9f, 6.8f), plaster, SolidLayer);
             for (int side = -1; side <= 1; side += 2)
                 Box("Room front wall", new Vector3(x + side * 1.54f, 1.45f, 6.52f),
@@ -77,6 +78,7 @@ namespace DesertLantern
             Bed(x, 8.20f);
             Bed(x, 11.34f);
             BuildRoomMess(room);
+            BuildFurniture(room);
             Box("Shared bedside cabinet", new Vector3(x - 2.00f, .38f, 9.76f),
                 new Vector3(.79f, .76f, .79f), oak, SolidLayer);
             Box("Bedside drawer", new Vector3(x - 1.59f, .55f, 9.76f), new Vector3(.050f, .22f, .68f), trim);
@@ -113,7 +115,7 @@ namespace DesertLantern
             Cylinder("Table pedestal", new Vector3(x + 1.71f, .35f, 7.61f), new Vector3(.08f, .35f, .08f), iron);
             Cylinder("Table foot", new Vector3(x + 1.71f, .035f, 7.61f), new Vector3(.30f, .035f, .30f), iron);
 
-            Vector3 rack = RackPosition(room);
+            Vector3 rack = RackPosition(room) - roomBuildOffset;
             Box("Luggage rack top", rack + Vector3.down * .08f, new Vector3(.68f, .095f, 1.03f), oak, SolidLayer);
             for (int a = -1; a <= 1; a += 2)
                 for (int b = -1; b <= 1; b += 2)
@@ -131,7 +133,7 @@ namespace DesertLantern
                 arm.localRotation = Quaternion.Euler(0, i * 90f, 0);
                 Piece(arm, "Timber fan blade", new Vector3(.50f, 0, 0), new Vector3(.77f, .037f, .157f), oak);
             }
-            WarmLight(new Vector3(x + .2f, 2.50f, 9.83f), 5.3f, 1.65f);
+            roomLighting[room] = WarmLight(new Vector3(x + .2f, 2.50f, 9.83f), 5.3f, 1.65f);
         }
 
         private void Bed(float x, float z)
@@ -147,22 +149,14 @@ namespace DesertLantern
 
         private void BuildUpperWalkway()
         {
-            Box("Upper motel wing", new Vector3(3.5f, 4.23f, 9.9f),
-                new Vector3(20.05f, 2.63f, 6.86f), siding);
-            Box("Upper balcony floor", new Vector3(3.5f, 2.97f, 5.70f), new Vector3(20.45f, .22f, 2.18f), trim, SolidLayer);
-            Box("Balcony top rail", new Vector3(3.5f, 4.12f, 4.70f), new Vector3(20.45f, .105f, .13f), trim);
+            Box("Upper balcony floor", new Vector3(3.5f, 2.97f, 5.70f), new Vector3(20.45f, .22f, 2.18f), trim, GroundLayer);
+            Box("Balcony top rail", new Vector3(3.5f, 4.12f, 4.70f), new Vector3(20.45f, .105f, .13f), trim, SolidLayer);
             Box("Balcony lower rail", new Vector3(3.5f, 3.32f, 4.70f), new Vector3(20.45f, .095f, .12f), trim);
             for (int i = 0; i < 53; i++)
                 Box("Balcony baluster", new Vector3(-6.65f + i * .39f, 3.72f, 4.70f),
                     new Vector3(.055f, .77f, .06f), trim);
             Box("Ground-floor walkway", new Vector3(3.5f, -.035f, 5.66f),
                 new Vector3(20.3f, .09f, 2.22f), tile, GroundLayer);
-            foreach (float x in RoomX)
-            {
-                Glazing(x + 1.44f, 4.26f, 6.37f, 1.43f, 1.08f);
-                Box("Upper door surround", new Vector3(x, 4.15f, 6.365f), new Vector3(1.04f, 2.16f, .11f), trim);
-                Box("Upper motel door", new Vector3(x, 4.16f, 6.297f), new Vector3(.90f, 2.00f, .061f), teal);
-            }
             for (int i = 0; i <= 4; i++)
             {
                 float x = -6.5f + 5f * i;
@@ -170,8 +164,43 @@ namespace DesertLantern
                 Box("Stone post base", new Vector3(x, .36f, 4.71f), new Vector3(.31f, .72f, .34f), stone, SolidLayer);
                 Box("Parking stall stripe", new Vector3(x, .008f, 1.36f), new Vector3(.070f, .01f, 5.3f), trim);
             }
-            Box("Upper walkway soffit", new Vector3(3.5f, 5.47f, 5.67f), new Vector3(20.7f, .15f, 2.20f), siding);
-            GableRoof("Wing gable", 3.5f, 5.60f, 9.36f, 20.80f, 9.50f, 1.55f, false);
+            Box("Upper walkway soffit", new Vector3(3.5f, 6.08f, 5.67f), new Vector3(20.7f, .15f, 2.20f), siding);
+            GableRoof("Wing gable", 3.5f, 6.18f, 9.36f, 20.80f, 9.50f, 1.55f, false);
+        }
+
+        private void BuildExternalStairs()
+        {
+            const int steps = 18;
+            Vector3 span = StairTop - StairFoot;
+            float run = span.z;
+            float rise = span.y;
+            float length = span.magnitude;
+            float angle = Mathf.Atan2(rise, run) * Mathf.Rad2Deg;
+            var collision = Box("Stair walking surface", (StairFoot + StairTop) * .5f - Vector3.up * .10f,
+                new Vector3(1.85f, .18f, length), trim, GroundLayer);
+            collision.transform.rotation = Quaternion.Euler(-angle, 0, 0);
+            collision.GetComponent<MeshRenderer>().enabled = false;
+            for (int step = 0; step < steps; step++)
+            {
+                float t = (step + .5f) / steps;
+                Box("Stair tread", StairFoot + span * t - Vector3.up * .062f,
+                    new Vector3(1.87f, .12f, run / steps + .035f), oak);
+            }
+            Box("Upper stair landing", new Vector3(14.13f, UpperFloor - .10f, 5.97f),
+                new Vector3(3.29f, .20f, 1.66f), trim, GroundLayer);
+            for (int side = -1; side <= 1; side += 2)
+            {
+                Vector3 railSide = Vector3.right * (side * .99f);
+                var handrail = Box("Stair handrail", (StairFoot + StairTop) * .5f + railSide + Vector3.up * 1.08f,
+                    new Vector3(.12f, .12f, length), iron, SolidLayer);
+                handrail.transform.rotation = Quaternion.Euler(-angle, 0, 0);
+                for (int post = 0; post <= 6; post++)
+                    Box("Stair rail post", StairFoot + span * (post / 6f) + railSide + Vector3.up * .50f,
+                        new Vector3(.09f, 1f, .09f), iron, SolidLayer);
+            }
+            Box("Landing guard", new Vector3(14.16f, UpperFloor + .92f, 6.79f),
+                new Vector3(3.14f, .12f, .12f), iron, SolidLayer);
+            Sign("UPPER ROOMS", new Vector3(14.84f, 1.35f, -.27f), .20f, Color.white);
         }
 
         private void BuildReception(bool overview)
@@ -179,7 +208,13 @@ namespace DesertLantern
             const float x = -9.65f;
             Box("Office floor", new Vector3(x, -.04f, 6.43f), new Vector3(4.65f, .095f, 4.65f), tile, GroundLayer);
             Box("Rear office wall", new Vector3(x, 1.48f, 8.68f), new Vector3(4.79f, 2.96f, .2f), oak, SolidLayer);
-            Box("Office west wall", new Vector3(-12, 1.48f, 6.42f), new Vector3(.20f, 2.96f, 4.69f), oak, SolidLayer);
+            Box("West wall window base", new Vector3(-12, .38f, 6.42f), new Vector3(.20f, .76f, 4.69f), oak, SolidLayer);
+            Box("West wall window header", new Vector3(-12, 2.68f, 6.42f), new Vector3(.20f, .56f, 4.69f), oak, SolidLayer);
+            Box("West wall south jamb", new Vector3(-12, 1.58f, 4.65f), new Vector3(.20f, 1.65f, 1.15f), oak, SolidLayer);
+            Box("West wall north jamb", new Vector3(-12, 1.58f, 8.0f), new Vector3(.20f, 1.65f, 1.40f), oak, SolidLayer);
+            GameObject window = Box("Picture window collision", new Vector3(-12, 1.58f, 6.275f),
+                new Vector3(.16f, 1.65f, 2.10f), dark, SolidLayer);
+            window.GetComponent<MeshRenderer>().enabled = false;
             Box("Office east wall", new Vector3(-7.31f, 1.48f, 6.42f), new Vector3(.20f, 2.96f, 4.69f), oak, SolidLayer);
             Box("Entrance left jamb wall", new Vector3(-11.27f, 1.48f, 4.10f), new Vector3(1.65f, 2.96f, .20f), plaster, SolidLayer);
             Box("Entrance right jamb wall", new Vector3(-8.14f, 1.48f, 4.10f), new Vector3(1.86f, 2.96f, .20f), plaster, SolidLayer);
@@ -200,63 +235,184 @@ namespace DesertLantern
             if (overview)
                 return;
 
-            for (int board = 0; board < 20; board++)
-            {
-                float offset = board * .232f;
-                Box("Rear wood panel seam", new Vector3(-11.88f + offset, 1.46f, 8.573f),
-                    new Vector3(.012f, 2.86f, .014f), siding);
-                Box("Office wall panel seam", new Vector3(-11.892f, 1.46f, 4.12f + offset),
-                    new Vector3(.014f, 2.86f, .012f), siding);
-            }
+            Material walnut = Surface(new Color32(83, 45, 26, 255), .28f, 12);
+            Material honey = Surface(new Color32(144, 83, 42, 255), .33f, 15);
+            Material middleWood = Surface(new Color32(112, 62, 35, 255), .30f, 15);
+            Material granite = Surface(new Color32(174, 143, 121, 255), .27f, 36);
+            Material brass = Surface(new Color32(195, 142, 52, 255), .10f, 0);
+            Material green = Surface(new Color32(39, 106, 39, 255), .10f, 0);
+            Material[] wallStains = { middleWood, middleWood, honey, middleWood, walnut, middleWood };
+            for (int board = 0; board < 32; board++)
+                Box("Walnut wall panel", new Vector3(-11.90f + board * .145f, 1.46f, 8.573f),
+                    new Vector3(.144f, 2.91f, .011f), wallStains[board % wallStains.Length]);
             Box("Laminated counter base", new Vector3(-9.37f, .50f, 7.43f), new Vector3(2.87f, 1f, .70f), oak, SolidLayer);
-            Box("Ivory counter top", new Vector3(-9.38f, 1.04f, 7.43f), new Vector3(3.03f, .10f, .90f), linen, SolidLayer);
+            Box("Stone counter top", new Vector3(-9.38f, 1.04f, 7.43f), new Vector3(3.03f, .10f, .90f), granite, SolidLayer);
             Box("Counter return", new Vector3(-7.90f, .51f, 7.87f), new Vector3(.55f, 1.02f, 1.54f), oak, SolidLayer);
-            Box("Return countertop", new Vector3(-7.90f, 1.04f, 7.87f), new Vector3(.63f, .10f, 1.59f), linen);
-            for (int strip = 0; strip < 2; strip++)
-                Box("Counter rail inlay", new Vector3(-9.37f, .24f + strip * .30f, 7.066f),
-                    new Vector3(2.74f, .048f, .041f), trim);
+            Box("Return countertop", new Vector3(-7.90f, 1.04f, 7.87f), new Vector3(.63f, .10f, 1.59f), granite);
+            for (int strip = 0; strip < 26; strip++)
+                Box("Counter walnut slat", new Vector3(-10.754f + strip * .111f, .51f, 7.065f),
+                    new Vector3(.107f, .86f, .028f), strip % 3 == 0 ? honey : middleWood);
+            Box("Counter toe kick", new Vector3(-9.37f, .055f, 7.052f), new Vector3(2.9f, .11f, .06f), dark);
+            Box("Counter apron", new Vector3(-9.37f, .98f, 7.046f), new Vector3(2.94f, .11f, .09f), walnut);
+            Box("Under-counter light strip", new Vector3(-9.37f, .943f, 7.008f), new Vector3(2.7f, .017f, .036f), lamp);
+            for (int segment = 0; segment < 3; segment++)
+                WarmLight(new Vector3(-10.25f + segment * .87f, .81f, 6.96f), 1.05f, .25f);
             BuildReceptionComputer();
-            Box("Registration ledger", new Vector3(-9.47f, 1.104f, 7.33f), new Vector3(.54f, .035f, .39f), trim);
-            Box("Desk telephone", new Vector3(-8.67f, 1.126f, 7.19f), new Vector3(.32f, .076f, .23f), linen);
-            Box("Handset", new Vector3(-8.67f, 1.185f, 7.19f), new Vector3(.29f, .065f, .081f), trim);
-            Box("Key cabinet", new Vector3(-10.35f, 1.77f, 8.50f), new Vector3(1.28f, .96f, .145f), siding);
-            Box("Key cabinet backing", new Vector3(-10.35f, 1.77f, 8.416f), new Vector3(1.18f, .86f, .036f), dark);
-            for (int row = 0; row < 4; row++)
-                Box("Key cubby shelf", new Vector3(-10.35f, 1.42f + row * .23f, 8.381f), new Vector3(1.19f, .029f, .081f), oak);
-            for (int column = 0; column < 5; column++)
-                Box("Key cubby divider", new Vector3(-10.83f + column * .24f, 1.77f, 8.384f), new Vector3(.024f, .86f, .077f), oak);
-            Box("Reception rate board", new Vector3(-8.33f, 1.81f, 8.533f), new Vector3(1.09f, .88f, .069f), dark);
-            Sign("ROOMS", new Vector3(-8.33f, 2.05f, 8.487f), .20f, Color.white);
-            Sign("$65 PER NIGHT", new Vector3(-8.33f, 1.79f, 8.487f), .112f, Color.white);
-            GameObject clock = Cylinder("Wall clock face", new Vector3(-9.35f, 2.39f, 8.526f),
-                new Vector3(.23f, .034f, .23f), linen);
+            Box("Desk blotter", new Vector3(-9.42f, 1.098f, 7.29f), new Vector3(.64f, .016f, .37f), dark);
+            Box("Guest ledger", new Vector3(-8.99f, 1.111f, 7.43f), new Vector3(.23f, .035f, .29f), walnut);
+            Box("Ledger pages", new Vector3(-8.99f, 1.133f, 7.43f), new Vector3(.20f, .012f, .25f), cream);
+            Cylinder("Service bell base", new Vector3(-9.83f, 1.109f, 7.23f), new Vector3(.077f, .017f, .077f), dark);
+            Cylinder("Brass service bell", new Vector3(-9.83f, 1.143f, 7.23f), new Vector3(.052f, .021f, .052f), brass);
+            Cylinder("Banker lamp base", new Vector3(-8.25f, 1.107f, 7.27f), new Vector3(.122f, .02f, .122f), brass);
+            Cylinder("Banker lamp stem", new Vector3(-8.25f, 1.27f, 7.27f), new Vector3(.019f, .16f, .019f), brass);
+            Primitive(PrimitiveType.Sphere, "Green banker shade", new Vector3(-8.25f, 1.45f, 7.25f),
+                new Vector3(.35f, .15f, .18f), green);
+            Box("Banker shade lower rim", new Vector3(-8.25f, 1.422f, 7.25f), new Vector3(.32f, .019f, .135f), brass);
+            WarmLight(new Vector3(-8.25f, 1.39f, 7.18f), 1.5f, .75f);
+            heldReceptionKey = Node("Held room key", Vector3.zero);
+            Piece(heldReceptionKey, "Held key bow", new Vector3(0, .045f, 0), new Vector3(.057f, .052f, .023f), brass);
+            Piece(heldReceptionKey, "Held key shaft", new Vector3(0, -.024f, 0), new Vector3(.019f, .094f, .019f), brass);
+            Piece(heldReceptionKey, "Held key tooth", new Vector3(.015f, -.06f, 0), new Vector3(.021f, .023f, .018f), brass);
+            heldReceptionKey.gameObject.SetActive(false);
+            Box("Walnut key rack", new Vector3(-9.43f, 1.65f, 8.50f), new Vector3(1.13f, .70f, .15f), walnut);
+            for (int room = 0; room < MotelService.RoomCount; room++)
+            {
+                Vector3 key = ReceptionKey(room);
+                Box("Room number plate", key + Vector3.up * .09f, new Vector3(.18f, .072f, .025f), brass);
+                Sign((room + 1).ToString("00"), key + new Vector3(0, .09f, -.026f), .068f, Color.black);
+                Transform hook = Node("Room key " + (room + 1), key);
+                Piece(hook, "Hanging brass key", Vector3.down * .044f, new Vector3(.019f, .11f, .021f), brass);
+                Piece(hook, "Key bow", Vector3.up * .015f, new Vector3(.053f, .049f, .024f), brass);
+                receptionKeys[room] = hook.gameObject;
+            }
+            Box("Daily checklist frame", new Vector3(-8.16f, 1.86f, 8.53f), new Vector3(.75f, .83f, .08f), walnut);
+            Box("Daily checklist paper", new Vector3(-8.16f, 1.86f, 8.48f), new Vector3(.66f, .74f, .02f), cream);
+            receptionChecklist = Sign("Today", new Vector3(-8.16f, 1.86f, 8.46f), .102f, Color.black);
+            receptionChecklist.lineSpacing = 1.13f;
+            GameObject signFrame = Cylinder("Oval motel sign frame", new Vector3(-9.64f, 2.36f, 8.511f),
+                new Vector3(1.64f, .034f, .55f), walnut);
+            signFrame.transform.rotation = Quaternion.Euler(90, 0, 0);
+            GameObject signFace = Cylinder("Oval motel sign face", new Vector3(-9.64f, 2.36f, 8.471f),
+                new Vector3(1.58f, .017f, .50f), honey);
+            signFace.transform.rotation = signFrame.transform.rotation;
+            Sign("Desert Lantern", new Vector3(-9.64f, 2.41f, 8.444f), .164f, Color.black).fontStyle = FontStyle.BoldAndItalic;
+            Sign("M O T E L", new Vector3(-9.64f, 2.24f, 8.444f), .089f, Color.black);
+            Box("Motel license frame", new Vector3(-8.16f, 2.48f, 8.53f), new Vector3(.46f, .25f, .065f), walnut);
+            Box("License paper", new Vector3(-8.16f, 2.48f, 8.49f), new Vector3(.37f, .18f, .021f), cream);
+            Sign("Motel License", new Vector3(-8.16f, 2.49f, 8.473f), .059f, Color.black);
+            Box("Reception shelving", new Vector3(-10.97f, 1.75f, 8.50f), new Vector3(.71f, 1.18f, .14f), walnut);
+            for (int shelf = 0; shelf < 3; shelf++)
+            {
+                float y = 1.21f + shelf * .38f;
+                Box("Walnut shelf", new Vector3(-10.97f, y, 8.35f), new Vector3(.72f, .045f, .32f), honey);
+                for (int binder = 0; binder < 4; binder++)
+                    Box("Office binder", new Vector3(-11.21f + binder * .14f, y + .13f, 8.36f),
+                        new Vector3(.102f, .22f - .03f * (binder % 2), .21f), binder % 2 == 0 ? dark : cream);
+            }
+            FloorRug(-9.66f, 5.64f, walnut, honey);
+            BuildFurniture(MotelService.ReceptionFurniture);
+            Box("Picture window sill", new Vector3(-11.91f, .77f, 6.27f), new Vector3(.23f, .10f, 2.23f), walnut);
+            Box("Window mullion", new Vector3(-11.89f, 1.55f, 6.27f), new Vector3(.09f, 1.58f, .059f), walnut);
+            for (int slat = 0; slat < 8; slat++)
+                Box("Venetian blind slat", new Vector3(-11.86f, 2.34f - slat * .052f, 6.27f),
+                    new Vector3(.088f, .034f, 2.12f), honey);
+            Box("Vacancy sign casing", new Vector3(-11.83f, 1.76f, 5.89f), new Vector3(.068f, .21f, .87f), dark);
+            TextMesh vacancy = Sign("VACANCY", new Vector3(-11.788f, 1.76f, 5.89f), .144f,
+                new Color32(255, 102, 54, 255));
+            vacancy.transform.rotation = Quaternion.Euler(0, -90, 0);
+            Box("Staff door casing", new Vector3(-7.53f, 1.05f, 8.518f), new Vector3(.40f, 2.10f, .079f), honey);
+            Box("Staff door", new Vector3(-7.53f, 1.04f, 8.463f), new Vector3(.35f, 2f, .035f), walnut);
+            Sign("STAFF", new Vector3(-7.53f, 1.64f, 8.437f), .058f, cream.color);
+            Box("Lobby chair seat", new Vector3(-11.46f, .40f, 5.73f), new Vector3(.55f, .20f, .65f), linen, SolidLayer);
+            Box("Lobby chair back", new Vector3(-11.68f, .71f, 5.73f), new Vector3(.16f, .48f, .65f), linen);
+            for (int arm = -1; arm <= 1; arm += 2)
+                Box("Chair arm", new Vector3(-11.45f, .59f, 5.73f + arm * .32f), new Vector3(.57f, .06f, .07f), walnut);
+            BuildLobbyPlant(new Vector3(-10.98f, 2.11f, 8.29f), .62f);
+            BuildLobbyPlant(new Vector3(-7.73f, .24f, 6.37f), .92f);
+            BuildLobbyPlant(new Vector3(-11.44f, .21f, 6.68f), .74f);
+            for (int fixture = 0; fixture < 2; fixture++)
+            {
+                float lightX = -10.80f + fixture * 2.26f;
+                Cylinder("Recessed counter light", new Vector3(lightX, 2.866f, 7.75f), new Vector3(.27f, .026f, .27f), lamp);
+                WarmLight(new Vector3(lightX, 2.70f, 7.74f), 2.9f, .40f);
+            }
+            GameObject clock = Cylinder("Wall clock face", new Vector3(-7.56f, 2.46f, 8.526f),
+                new Vector3(.30f, .031f, .30f), granite);
             clock.transform.rotation = Quaternion.Euler(90, 0, 0);
-            clockMinuteHand = Node("Clock minute pivot", new Vector3(-9.35f, 2.39f, 8.482f));
-            clockHour = Node("Clock hour pivot", new Vector3(-9.35f, 2.39f, 8.470f));
+            clockMinuteHand = Node("Clock minute pivot", new Vector3(-7.56f, 2.46f, 8.482f));
+            clockHour = Node("Clock hour pivot", new Vector3(-7.56f, 2.46f, 8.470f));
             Piece(clockMinuteHand, "Clock minute hand", new Vector3(0, .079f, 0),
                 new Vector3(.021f, .169f, .012f), dark);
             Piece(clockHour, "Clock hour hand", new Vector3(0, .05f, 0),
                 new Vector3(.028f, .112f, .012f), dark);
             Cylinder("Reception ceiling globe", new Vector3(-9.65f, 2.84f, 6.32f), new Vector3(.28f, .071f, .28f), lamp);
-            WarmLight(new Vector3(-9.65f, 2.68f, 6.39f), 5.8f, 2.1f);
-            Box("Desk sconce", new Vector3(-8.08f, 1.70f, 8.48f), new Vector3(.22f, .20f, .12f), lamp);
-            WarmLight(new Vector3(-8.12f, 1.60f, 8.28f), 2.7f, .85f);
+            WarmLight(new Vector3(-9.65f, 2.68f, 6.39f), 5.8f, 1.25f);
+            Box("Motel sign lamp", new Vector3(-9.64f, 2.72f, 8.40f), new Vector3(.39f, .075f, .18f), dark);
+            WarmLight(new Vector3(-9.64f, 2.67f, 8.31f), 1.2f, .40f);
+        }
+
+        private void BuildLobbyPlant(Vector3 potTop, float scale)
+        {
+            Cylinder("Ceramic planter", potTop + Vector3.down * .10f * scale,
+                new Vector3(.32f, .13f, .32f) * scale, stone);
+            for (int stem = 0; stem < 9; stem++)
+            {
+                float angle = stem * 2.39996f;
+                float radius = (.12f + stem % 3 * .08f) * scale;
+                Vector3 center = potTop + new Vector3(Mathf.Cos(angle) * radius, .16f + stem % 4 * .09f,
+                    Mathf.Sin(angle) * radius);
+                var blade = Primitive(PrimitiveType.Sphere, "Planter leaf", center,
+                    new Vector3(.11f, .036f, .30f) * scale, leaf);
+                blade.transform.rotation = Quaternion.Euler(40 - stem * 5, angle * Mathf.Rad2Deg + 90, 0);
+            }
+        }
+
+        private TextMesh receptionChecklist;
+        private Transform heldReceptionKey;
+        private readonly GameObject[] receptionKeys = new GameObject[MotelService.RoomCount];
+
+        public void ShowReceptionKeys(int unavailable, MotelWalker carrier)
+        {
+            heldReceptionKey.gameObject.SetActive(carrier != null);
+            if (carrier != null)
+                heldReceptionKey.SetPositionAndRotation(carrier.CarryPosition, carrier.Orientation);
+            for (int room = 0; room < receptionKeys.Length; room++)
+                if (receptionKeys[room] != null)
+                    receptionKeys[room].SetActive((unavailable & (1 << room)) == 0);
+        }
+
+        public static Vector3 ReceptionKey(int room) =>
+            new Vector3(-9.84f + room % 4 * .27f, 1.85f - room / 4 * .205f, 8.392f);
+
+        public void ShowReceptionChecklist(int arrivals, int departures, int requests, int deliveries)
+        {
+            if (receptionChecklist == null)
+                return;
+            string text = $"Today\nCheck-ins  {arrivals}\nCheck-outs  {departures}\nRequests  {requests}\nDeliveries  {deliveries}";
+            if (receptionChecklist.text != text)
+                receptionChecklist.text = text;
+        }
+
+        private void FloorRug(float x, float z, Material border, Material inset)
+        {
+            Box("Lobby rug border", new Vector3(x, .015f, z), new Vector3(2.12f, .014f, 1.38f), border);
+            Box("Lobby rug field", new Vector3(x, .024f, z), new Vector3(1.98f, .008f, 1.24f), inset);
         }
 
         private void BuildReceptionComputer()
         {
-            ReceptionComputer = Node("Reception supply computer", new Vector3(-10.28f, 1.09f, 7.47f));
+            ReceptionComputer = Node("Motel Manager computer", new Vector3(-10.28f, 1.09f, 7.47f));
             Piece(ReceptionComputer, "Monitor pedestal", new Vector3(0, .06f, -.01f),
                 new Vector3(.40f, .102f, .36f), dark);
-            Piece(ReceptionComputer, "CRT casing", new Vector3(0, .35f, .045f),
-                new Vector3(.59f, .46f, .43f), trim, SolidLayer);
+            Piece(ReceptionComputer, "Flat monitor casing", new Vector3(0, .35f, -.145f),
+                new Vector3(.59f, .46f, .055f), dark, SolidLayer);
             Piece(ReceptionComputer, "CRT bezel", new Vector3(0, .363f, -.18f),
                 new Vector3(.498f, .351f, .047f), dark);
-            Material screen = Surface(new Color32(32, 69, 60, 255), .14f, 7);
-            screen.SetColor("_EmissionColor", new Color(.07f, .28f, .17f));
+            Material screen = Surface(new Color32(41, 46, 83, 255), .14f, 7);
+            screen.SetColor("_EmissionColor", new Color(.09f, .10f, .22f));
             Piece(ReceptionComputer, "Glowing monitor glass", new Vector3(0, .382f, -.205f),
                 new Vector3(.429f, .265f, .021f), screen);
-            Sign("SUPPLIES", ReceptionComputer.position + new Vector3(0, .385f, -.219f), .075f,
+            Sign("Motel Manager\nReservations\nGuests · Supplies\nStaff", ReceptionComputer.position + new Vector3(0, .385f, -.219f), .062f,
                 new Color32(195, 255, 208, 255));
             Piece(ReceptionComputer, "Keyboard", new Vector3(0, .023f, -.31f),
                 new Vector3(.505f, .046f, .243f), dark);
@@ -304,7 +460,7 @@ namespace DesertLantern
                     new Vector3(.55f, .020f, .018f), dark);
         }
 
-        private void WarmLight(Vector3 p, float range, float intensity)
+        private Light WarmLight(Vector3 p, float range, float intensity)
         {
             Light light = Node("Warm interior light", p).gameObject.AddComponent<Light>();
             light.type = LightType.Point;
@@ -312,13 +468,14 @@ namespace DesertLantern
             light.range = range;
             light.intensity = intensity;
             light.shadows = LightShadows.None;
+            return light;
         }
 
         private Transform Node(string name, Vector3 p)
         {
             var node = new GameObject(name).transform;
             node.SetParent(root, false);
-            node.localPosition = p;
+            node.localPosition = p + roomBuildOffset;
             return node;
         }
 
@@ -340,7 +497,7 @@ namespace DesertLantern
             obj.name = name;
             obj.layer = layer;
             obj.transform.SetParent(root, false);
-            obj.transform.localPosition = position;
+            obj.transform.localPosition = position + roomBuildOffset;
             obj.transform.localScale = size;
             obj.GetComponent<MeshRenderer>().sharedMaterial = material;
             // Refer to the collider types explicitly so Web builds keep the

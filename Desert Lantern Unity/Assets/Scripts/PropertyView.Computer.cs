@@ -5,11 +5,9 @@ namespace DesertLantern
     public sealed partial class PropertyView
     {
         private const byte PurchaseAction = 4;
-        private const byte ConfirmBookingAction = 5;
-        private const byte CancelBookingAction = 6;
         private bool computerOpen;
-        private const byte AdjustScheduleAction = 8;
         private int computerTab;
+        private bool viewingCalendar;
 
         private static bool AtComputer(Vector3 position) =>
             position.z > 5.63f && MotelWalker.Distance(position, MotelWorld.ComputerApproach) < 1.15f;
@@ -37,228 +35,342 @@ namespace DesertLantern
                 TryPurchase(offer, caretaker.Position);
         }
 
-        private void UpdateBooking(int room, bool confirm, Vector3 position)
-        {
-            if (!AtComputer(position) || (room == Occupied && guest != null))
-                return;
-            MotelService service = Service;
-            service.UpdateReservation(room, confirm);
-            Service = service;
-        }
-
-        private void RequestBooking(int room, bool confirm)
-        {
-            if (lan != null && !lan.IsHost)
-                lan.State?.ActionRpc(confirm ? ConfirmBookingAction : CancelBookingAction, new Vector3(room, 0, 0));
-            else
-                UpdateBooking(room, confirm, caretaker.Position);
-        }
-
-        private void UpdateSchedule(int room, bool end, int direction, Vector3 position)
-        {
-            if (!AtComputer(position) || (room == Occupied && guest != null))
-                return;
-            MotelService service = Service;
-            service.AdjustSchedule(room, end, direction * MotelService.ScheduleStep);
-            Service = service;
-        }
-
-        private void RequestSchedule(int room, bool end, int direction)
-        {
-            if (lan != null && !lan.IsHost)
-                lan.State?.ActionRpc(AdjustScheduleAction, new Vector3(room, end ? 1 : 0, direction));
-            else
-                UpdateSchedule(room, end, direction, caretaker.Position);
-        }
-
         private void DrawReceptionComputer(Rect screen, float scale)
         {
             Rect panel = DrawOverlay(screen, 473 * scale, scale);
             float x = panel.x + 18 * scale;
             float width = panel.width - 36 * scale;
             GUI.Label(new Rect(x, panel.y + 9 * scale, width, 47 * scale), "Reception computer", title);
-            float tabWidth = (width - 12 * scale) / 3;
+            float tabWidth = (width - 6 * scale * (ComputerTabs.Length - 1)) / ComputerTabs.Length;
             float gap = tabWidth + 6 * scale;
             for (int tab = 0; tab < ComputerTabs.Length; tab++)
             {
-                Rect tabRect = new Rect(x + gap * (tab % 3), panel.y + (61 + 32 * (tab / 3)) * scale,
+                Rect tabRect = new Rect(x + gap * tab, panel.y + 61 * scale,
                     tabWidth, 29 * scale);
                 if (DrawButton(tabRect, ComputerTabs[tab]))
                     computerTab = tab;
             }
 
-            Rect body = panel;
-            body.y += 34 * scale;
-            switch (computerTab)
+            if (computerTab == 1)
             {
-                case 1: DrawReservationRows(body, x, width, scale, false); break;
-                case 2: DrawReservationRows(body, x, width, scale, true); break;
-                case 3: DrawGuestRequests(body, x, width, scale); break;
-                case 4: DrawStaff(body, x, width, scale); break;
-                case 5: DrawReviews(body, x, width, scale); break;
-                default: DrawSupplyRows(body, x, width, scale); break;
+                float half = width / 2;
+                if (DrawButton(new Rect(x, panel.y + 98 * scale, half - 3 * scale, 29 * scale),
+                    viewingDecisions ? "Reservations" : viewingCalendar ? "Manage reservations" : "Room calendar"))
+                {
+                    if (viewingDecisions)
+                        viewingDecisions = false;
+                    else
+                        viewingCalendar = !viewingCalendar;
+                }
+                if (DrawButton(new Rect(x + half + 3 * scale, panel.y + 98 * scale, half - 3 * scale, 29 * scale),
+                    Service.PendingDecision == ManagementDecision.None ? "Decisions" : "Decision waiting"))
+                    viewingDecisions = !viewingDecisions;
+                Rect body = panel;
+                body.y += (viewingCalendar ? 25 : 26) * scale;
+                if (viewingDecisions)
+                    DrawDecisions(panel, x, width, scale);
+                else if (viewingCalendar)
+                    DrawRoomCalendar(body, x, width, scale);
+                else
+                    DrawReservationRows(body, x, width, scale);
             }
+            else if (computerTab == 2)
+                DrawStaff(panel, x, width, scale);
+            else if (computerTab == 3)
+                DrawFinancialReport(panel, x, width, scale);
+            else if (computerTab == 4)
+                DrawExpansionOffice(panel, x, width, scale);
+            else
+                DrawSupplyRows(panel, x, width, scale);
 
             if (DrawButton(new Rect(x, panel.y + 424 * scale, width, 35 * scale), "Close computer"))
                 SetComputerVisible(false);
         }
 
         private static readonly string[] ComputerTabs =
-            { "Supplies", "Reservations", "Booked", "Guests", "Staff", "Reviews" };
+            { "Supplies", "Bookings", "Staff", "Reports", "Expansion" };
 
-        private void DrawReservationRows(Rect panel, float x, float width, float scale, bool booked)
+        private const byte BookRoomAction = 18;
+        private const byte EditBookingAction = 19;
+        private int bookingRoom;
+        private int bookingLead = 1;
+        private int bookingNights = 1;
+        private BookingPreference bookingPreference;
+        private int calendarOffset;
+        private int selectedBooking;
+        private string bookingFeedback;
+
+        private void ChangeBooking(byte action, Vector3 data, Vector3 point, ulong worker)
         {
             MotelService service = Service;
-            GUI.Label(new Rect(x, panel.y + 105 * scale, width, 27 * scale),
-                $"{MotelService.DisplayTime(service.ClockMinute)}  ·  ${MotelService.RoomRate} per night", label);
-            int rows = 0;
-            for (int room = 1; room <= 2; room++)
+            if (action == BookRoomAction)
             {
-                int bit = 1 << room;
-                bool checkedIn = (service.VisitedRooms & bit) != 0;
-                bool arrived = room == Occupied && guest != null;
-                bool reserved = service.HasReservation(room);
-                bool cancelled = service.ReservationCancelled(room);
-                if (booked != reserved || cancelled || (!booked && checkedIn))
-                    continue;
-                float y = panel.y + (136 + rows++ * 121) * scale;
-                string status = checkedIn ? ((service.ActiveReservations & bit) != 0 ? "Checked in" : "Checked out")
-                    : arrived ? "At reception" : service.ClockMinute >= service.BookingStart(room) ? "Due now"
-                    : reserved ? "Booked" : "Awaiting confirmation";
-                bool editable = !checkedIn && !arrived;
-                string guestName = Guests[room].Substring("Guest-".Length);
-                GUI.Label(new Rect(x, y, width, 28 * scale), $"{guestName}  ·  Room {room + 1}", detail);
-                GUI.Label(new Rect(x, y + 29 * scale, width, 21 * scale), status, label);
-                DrawBookingTime(room, false, service.BookingStart(room), editable,
-                    new Rect(x, y + 53 * scale, width, 27 * scale), scale);
-                DrawBookingTime(room, true, service.BookingEnd(room), editable,
-                    new Rect(x, y + 84 * scale, width, 27 * scale), scale);
-
-                float right = x + width;
-                if (editable && !reserved &&
-                    DrawButton(new Rect(right - 183 * scale, y + 4 * scale, 90 * scale, 32 * scale), "Confirm"))
-                    RequestBooking(room, true);
-                if (editable && DrawButton(new Rect(right - 88 * scale, y + 4 * scale, 88 * scale, 32 * scale),
-                    reserved ? "Cancel" : "Decline"))
-                    RequestBooking(room, false);
+                bool phone = data.z < 0;
+                if (phone ? !AtPhone(point) : !AtComputer(point))
+                    return;
+                int room = (int)data.x;
+                int lead = (int)data.y % 8;
+                var preference = (BookingPreference)((int)data.y / 8);
+                int nights = Mathf.Abs((int)data.z);
+                if (room < 0 || room >= Guests.Length || lead < 0 || (int)preference < 0 || (int)preference > 3 || nights < 1 || nights > 7)
+                    return;
+                int start = service.ClockMinute + lead * MotelService.MinutesPerDay + MotelService.ScheduleStep;
+                bool booked = (phone ? service.CanBookPhoneFor(worker) : !service.IsBroken(0, Fixture.Router)) && !((guest != null || vehicleArriving) && room == Occupied) &&
+                    service.BookRoom(service.RoomReference(room), start, start + nights * MotelService.MinutesPerDay,
+                        phone ? BookingChannel.Telephone : BookingChannel.Online, preference);
+                if (booked && phone)
+                    service.FinishPhoneBooking();
+                bookingFeedback = booked ? "Reservation booked" : "Room unavailable for those dates";
             }
-            if (rows == 0)
-                GUI.Label(new Rect(x, panel.y + 145 * scale, width, 32 * scale),
-                    booked ? "No booked stays." : "No reservation requests.", detail);
+            else
+            {
+                if (!AtComputer(point))
+                    return;
+                int index = (int)data.x;
+                int operation = (int)data.y;
+                if (operation == 6 && index >= 0 && index < Guests.Length)
+                    service.ExtendStay(index);
+                else if (index >= 0 && index < service.ReservationCount &&
+                    operation >= 0 && operation <= 5 && service.ReservationStart(index) == (int)data.z &&
+                    ((guest == null && !vehicleArriving) || (service.ReservationRoom(index) != Occupied &&
+                        (operation != 5 || (service.ReservationRoom(index) + 1) % service.RoomCapacity != Occupied))))
+                    service.ChangeReservation(service.ReservationReference(index), operation);
+            }
+            Service = service;
         }
 
-        private void DrawGuestRequests(Rect panel, float x, float width, float scale)
+        private void RequestBookingAction(byte action, Vector3 data)
+        {
+            if (lan != null && !lan.IsHost)
+                lan.State?.ActionRpc(action, data);
+            else
+                ChangeBooking(action, data, caretaker.Position, LocalWorker);
+        }
+
+        private void DrawBookingForm(Rect area, float scale, bool phone)
+        {
+            float w = area.width / 3;
+            if (DrawButton(new Rect(area.x, area.y, w - 4 * scale, 29 * scale), $"Room {bookingRoom + 1}"))
+                bookingRoom = (bookingRoom + 1) % Service.RoomCapacity;
+            if (DrawButton(new Rect(area.x + w, area.y, w - 4 * scale, 29 * scale), $"In {bookingLead} days"))
+                bookingLead = (bookingLead + 1) % 8;
+            if (DrawButton(new Rect(area.x + 2 * w, area.y, w, 29 * scale), $"{bookingNights} nights"))
+                bookingNights = bookingNights % 7 + 1;
+            if (DrawButton(new Rect(area.x, area.y + 35 * scale, w, 29 * scale), "Book room"))
+                RequestBookingAction(BookRoomAction, new Vector3(bookingRoom, bookingLead + 8 * (int)bookingPreference, phone ? -bookingNights : bookingNights));
+            if (DrawButton(new Rect(area.x + w + 5 * scale, area.y + 35 * scale, 2 * w - 5 * scale, 29 * scale),
+                MotelService.PreferenceLabel(bookingPreference)))
+                bookingPreference = (BookingPreference)(((int)bookingPreference + 1) % 4);
+            GUI.Label(new Rect(area.x, area.y + 66 * scale, area.width, 22 * scale), bookingFeedback ?? "", label);
+        }
+
+        private void DrawReservationRows(Rect panel, float x, float width, float scale)
+        {
+            DrawBookingForm(new Rect(x, panel.y + 102 * scale, width, 65 * scale), scale, false);
+            MotelService service = Service;
+            if (service.ReservationCount == 0)
+                return;
+            selectedBooking = Mathf.Clamp(selectedBooking, 0, service.ReservationCount - 1);
+            int index = selectedBooking;
+            float y = panel.y + 191 * scale;
+            if (DrawButton(new Rect(x, y, width, 28 * scale),
+                $"Booking {index + 1}/{service.ReservationCount} · Room {service.ReservationRoom(index) + 1} · {service.ReservationChannel(index)}"))
+                selectedBooking = (index + 1) % service.ReservationCount;
+            GUI.Label(new Rect(x, y + 31 * scale, width, 25 * scale),
+                $"In {MotelService.DisplayTime(service.ReservationStart(index))} · Out {MotelService.DisplayTime(service.ReservationEnd(index))}", label);
+            GUI.Label(new Rect(x, y + 55 * scale, width, 22 * scale),
+                $"{MotelService.PreferenceLabel(service.ReservationPreference(index))} · ${service.ReservationRate(index)}/night", label);
+            float col = width / 3;
+            for (int operation = 0; operation < BookingOperations.Length; operation++)
+                if (DrawButton(new Rect(x + col * (operation % 3), y + (78 + operation / 3 * 32) * scale,
+                    col - 4 * scale, 28 * scale), BookingOperations[operation]))
+                    RequestBookingAction(EditBookingAction, new Vector3(index, operation, service.ReservationStart(index)));
+        }
+
+        private static readonly string[] BookingOperations =
+            { "Cancel", "In +15 min", "In −15 min", "Add night", "Remove night", "Next room" };
+
+        private void DrawRoomCalendar(Rect panel, float x, float width, float scale)
         {
             MotelService service = Service;
-            float y = panel.y + 108 * scale;
-            if (service.ActiveRooms == 0)
-                GUI.Label(new Rect(x, y, width, 35 * scale), "Guest requests appear during a stay.", detail);
-            for (int room = 0; room < Guests.Length; room++)
+            float y = panel.y + 100 * scale;
+            if (DrawButton(new Rect(x, y, 64 * scale, 26 * scale), "‹ Week"))
+                calendarOffset = Mathf.Max(0, calendarOffset - 7);
+            if (DrawButton(new Rect(x + width - 64 * scale, y, 64 * scale, 26 * scale), "Week ›"))
+                calendarOffset = Mathf.Min(7, calendarOffset + 7);
+            GUI.Label(new Rect(x + 77 * scale, y, width - 154 * scale, 26 * scale),
+                MotelService.DisplayTime(service.ClockMinute), label);
+
+            int first = service.ClockMinute / MotelService.MinutesPerDay + calendarOffset;
+            float column = (width - 116 * scale) / 7;
+            for (int day = 0; day < 7; day++)
+                GUI.Label(new Rect(x + 51 * scale + day * column, y + 33 * scale, column, 24 * scale),
+                    (first + day + 1).ToString(), label);
+            float roomRow = service.RoomCapacity > MotelService.BaseRoomCount ? 15 : 22;
+            for (int room = 0; room < service.RoomCapacity; room++)
             {
-                int bit = 1 << room;
-                if ((service.ActiveRooms & bit) == 0)
-                    continue;
-                string request = service.RequestOpen(room) ? "Needs a towel"
-                    : (service.FulfilledRequests & bit) != 0 ? "Towel delivered" : "No open requests";
-                GUI.Label(new Rect(x, y, width, 26 * scale), $"Room {room + 1}  ·  {request}", detail);
-                GUI.enabled = (service.TvPackages & bit) == 0;
-                if (DrawButton(new Rect(x, y + 27 * scale, 135 * scale, 29 * scale),
-                    GUI.enabled ? "TV access  $12" : "TV active"))
-                    RequestGuestAction(SellUpgradeAction, room);
-                GUI.enabled = (service.MealOrders & bit) == 0;
-                if (DrawButton(new Rect(x + 144 * scale, y + 27 * scale, 170 * scale, 29 * scale),
-                    GUI.enabled ? "Room service  $18" : "Meal ordered"))
-                    RequestGuestAction(SellUpgradeAction, room + Guests.Length);
-                GUI.enabled = true;
-                y += 67 * scale;
+                float rowY = y + (58 + room * roomRow) * scale;
+                GUI.Label(new Rect(x, rowY, 52 * scale, roomRow * scale), $"Rm {room + 1}", label);
+                for (int day = 0; day < 7; day++)
+                {
+                    int start = (first + day) * MotelService.MinutesPerDay;
+                    bool free = service.RoomAvailable(room, start, start + MotelService.MinutesPerDay);
+                    var cell = new Rect(x + 51 * scale + day * column, rowY + 3 * scale, column - 4 * scale, (roomRow - 6) * scale);
+                    Fill(cell, free ? new Color(.22f, .31f, .25f) : new Color(.66f, .38f, .16f));
+                }
+                if ((service.ActiveRooms & (1 << room)) != 0 &&
+                    DrawButton(new Rect(x + width - 63 * scale, rowY, 63 * scale, roomRow * scale), "+1 night"))
+                    RequestBookingAction(EditBookingAction, new Vector3(room, 6, 0));
             }
+            GUI.Label(new Rect(x, y + 239 * scale, width, 24 * scale), "Green · Available   Amber · Booked or occupied", label);
         }
+
+        private static readonly string[] StaffNames = CountyPortfolio.StaffRoles;
+        private Vector2 staffScroll;
 
         private void DrawStaff(Rect panel, float x, float width, float scale)
         {
             MotelService service = Service;
-            GUI.Label(new Rect(x, panel.y + 111 * scale, width, 30 * scale), "Bellhop", detail);
-            GUI.Label(new Rect(x, panel.y + 144 * scale, width, 48 * scale),
-                "Collects suitcases from guest cars and delivers them to the assigned rooms.", label);
-            GUI.enabled = !service.BellhopHired && service.Cash >= MotelService.BellhopCost;
-            if (DrawButton(new Rect(x, panel.y + 205 * scale, 166 * scale, 38 * scale),
-                service.BellhopHired ? "Bellhop on duty" : $"Hire  ${MotelService.BellhopCost}"))
-                RequestGuestAction(HireBellhopAction);
-            GUI.enabled = true;
+            GUI.Label(new Rect(x, panel.y + 110 * scale, width, 30 * scale),
+                $"Cash ${service.Cash} · ${MotelService.StaffWage}/day per employee", label);
+            var viewport = new Rect(x, panel.y + 145 * scale, width, 270 * scale);
+            float rowWidth = width - 19 * scale;
+            staffScroll = GUI.BeginScrollView(viewport, staffScroll, new Rect(0, 0, rowWidth, StaffNames.Length * 45 * scale));
+            x = 0;
+            width = rowWidth;
+            for (int role = 0; role < StaffNames.Length; role++)
+            {
+                float y = role * 45 * scale;
+                bool hired = service.StaffHired(role);
+                GUI.Label(new Rect(x, y, width - 174 * scale, 34 * scale), StaffNames[role], detail);
+                GUI.enabled = hired;
+                if (DrawButton(new Rect(x + width - 174 * scale, y, 84 * scale, 34 * scale),
+                    service.StaffUrgentOnly(role) ? "Urgent only" : "All tasks"))
+                    RequestOperations(StaffAction, new Vector3(role, 1, 0));
+                GUI.enabled = hired || service.Cash >= MotelService.BellhopCost;
+                if (DrawButton(new Rect(x + width - 84 * scale, y, 84 * scale, 34 * scale),
+                    hired ? "Dismiss" : $"Hire ${MotelService.BellhopCost}"))
+                    RequestOperations(StaffAction, new Vector3(role, 0, 0));
+                GUI.enabled = true;
+            }
+            GUI.EndScrollView();
         }
 
-        private void DrawBookingTime(int room, bool end, int minute, bool editable, Rect row, float scale)
-        {
-            string text = $"{(end ? "Departure" : "Arrival")}  ·  {MotelService.DisplayTime(minute)}";
-            GUI.Label(new Rect(row.x, row.y, row.width - 131 * scale, row.height), text, label);
-            if (!editable)
-                return;
-            if (DrawButton(new Rect(row.xMax - 122 * scale, row.y, 59 * scale, row.height), "-15m"))
-                RequestSchedule(room, end, -1);
-            if (DrawButton(new Rect(row.xMax - 59 * scale, row.y, 59 * scale, row.height), "+15m"))
-                RequestSchedule(room, end, 1);
-        }
+        private const byte CartOrderAction = 17;
+        private int supplyCart;
+        private bool orderHistory;
+        private Vector2 orderScroll;
+        private Vector2 supplyScroll;
 
-        private void DrawReviews(Rect panel, float x, float width, float scale)
+        private void SubmitCart(int cart, Vector3 point)
         {
             MotelService service = Service;
-            if (service.Reviews == 0)
+            if ((AtComputer(point) || AtPhone(point)) && service.OrderCart(cart))
             {
-                GUI.Label(new Rect(x, panel.y + 108 * scale, width, 45 * scale),
-                    "Reviews appear after checkout.", detail);
-                return;
-            }
-
-            float y = panel.y + 110 * scale;
-            for (int room = 0; room < Guests.Length; room++)
-            {
-                int bit = 1 << room;
-                if ((service.Reviews & bit) == 0)
-                    continue;
-                bool punctual = (service.LateCheckIns & bit) == 0;
-                bool luggage = (service.DeliveredBags & bit) != 0;
-                bool checkout = (service.MissedCheckouts & bit) == 0;
-                bool serviceSatisfied = (service.KnownRequests & bit) == 0 ||
-                    (service.FulfilledRequests & bit) != 0;
-                int rating = 1 + (punctual ? 1 : 0) + (luggage ? 1 : 0) + (checkout ? 1 : 0) +
-                    (serviceSatisfied ? 1 : 0);
-                GUI.Label(new Rect(x, y, width, 23 * scale), $"Room {room + 1}  ·  {rating}/5", detail);
-                string text = $"{(punctual ? "Quick check-in." : "I waited to check in.")} " +
-                    $"{(luggage ? "My luggage arrived." : "I handled my luggage.")} " +
-                    $"{(checkout ? "Checkout was on time." : "I checked out on my own.")}" +
-                    (serviceSatisfied ? "" : " My request went unanswered.");
-                GUI.Label(new Rect(x, y + 23 * scale, width, 38 * scale), text, label);
-                y += 65 * scale;
+                Service = service;
             }
         }
 
         private void DrawSupplyRows(Rect panel, float x, float width, float scale)
         {
             MotelService service = Service;
-            string status = service.Delivery switch
+            GUI.Label(new Rect(x, panel.y + 105 * scale, width - 125 * scale, 28 * scale),
+                $"Cash ${service.Cash} · {service.PendingOrderCount} open orders", label);
+            if (DrawButton(new Rect(x + width - 122 * scale, panel.y + 105 * scale, 122 * scale, 28 * scale),
+                orderHistory ? "Shop" : "Track orders"))
+                orderHistory = !orderHistory;
+
+            if (orderHistory)
             {
-                SupplyDelivery.InTransit => "Order in transit",
-                SupplyDelivery.AtBay => "Order at the delivery bay",
-                SupplyDelivery.Carried => "Order being unloaded",
-                _ => "Ready to order"
-            };
-            GUI.Label(new Rect(x, panel.y + 108 * scale, width, 31 * scale),
-                $"Cash  ${service.Cash}   ·   {status}", label);
-            for (int row = 0; row < MotelService.Catalog.Length; row++)
+                int lines = service.PendingOrderCount + service.CompletedOrderCount * 2;
+                var viewport = new Rect(x, panel.y + 138 * scale, width, 272 * scale);
+                orderScroll = GUI.BeginScrollView(viewport, orderScroll,
+                    new Rect(0, 0, width - 20 * scale, Mathf.Max(viewport.height, lines * 27 * scale)));
+                int line = 0;
+                if (service.PendingOrderCount > 0)
+                {
+                    string status = service.Delivery == SupplyDelivery.InTransit
+                        ? $"Due {MotelService.DisplayTime(service.DeliveryDue)}" : service.Delivery == SupplyDelivery.AtBay
+                        ? "Ready at the bay" : "Being carried to storage";
+                    GUI.Label(new Rect(0, line++ * 27 * scale, width, 27 * scale),
+                        $"#{service.ActiveOrderNumber} · {status}", label);
+                }
+                for (int order = 0; order < service.PendingOrderCount - 1; order++)
+                {
+                    int due = service.QueuedOrderDue(order);
+                    GUI.Label(new Rect(0, line++ * 27 * scale, width, 27 * scale),
+                        $"#{service.QueuedOrderNumber(order)} · {(due <= service.ClockMinute ? "Waiting at the bay" : MotelService.DisplayTime(due))}", label);
+                }
+                for (int order = service.CompletedOrderCount - 1; order >= 0; order--)
+                {
+                    int cart = service.CompletedCart(order);
+                    GUI.Label(new Rect(0, line++ * 27 * scale, width, 27 * scale),
+                        $"#{service.CompletedOrder(order)} · Stocked", label);
+                    int products = 0;
+                    int units = 0;
+                    for (int item = 0; item < MotelService.Catalog.Length; item++)
+                    {
+                        int packs = MotelService.CartQuantity(cart, item);
+                        if (packs > 0)
+                            products++;
+                        units += packs * MotelService.Catalog[item].Quantity;
+                    }
+                    GUI.Label(new Rect(0, line++ * 27 * scale, width, 27 * scale),
+                        $"   {products} products · {units} units", label);
+                }
+                GUI.EndScrollView();
+                return;
+            }
+
+            var catalogArea = new Rect(x, panel.y + 138 * scale, width, 233 * scale);
+            supplyScroll = GUI.BeginScrollView(catalogArea, supplyScroll,
+                new Rect(0, 0, width - 20 * scale, MotelService.Catalog.Length * 39 * scale));
+            x = 0;
+            width -= 20 * scale;
+            for (int item = 0; item < MotelService.Catalog.Length; item++)
             {
-                SupplyOffer offer = MotelService.Catalog[row];
-                float y = panel.y + (141 + 40 * row) * scale;
-                GUI.Label(new Rect(x, y, width - 91 * scale, 26 * scale),
-                    $"{offer.Name} ×{offer.Quantity}", detail);
-                GUI.Label(new Rect(x, y + 20 * scale, width - 116 * scale, 21 * scale),
-                    $"{service.Stock(row)} in stock", label);
-                GUI.enabled = service.Delivery == SupplyDelivery.None && service.Cash >= offer.Price &&
-                    (row != 4 || service.Vacuums == 0);
-                if (DrawButton(new Rect(panel.xMax - 128 * scale, y + 5 * scale, 110 * scale, 29 * scale),
-                    row == 4 && service.Vacuums > 0 ? "Owned" : $"Order  ${offer.Price}"))
-                    Purchase(row);
+                SupplyOffer offer = MotelService.Catalog[item];
+                int quantity = MotelService.CartQuantity(supplyCart, item);
+                int step = 1 << (4 * item);
+                float y = 39 * item * scale;
+                GUI.Label(new Rect(x, y, width - 152 * scale, 24 * scale),
+                    $"{offer.Name} ×{offer.Quantity} · ${offer.Price}", detail);
+                int stock = service.Stock(item);
+                GUI.Label(new Rect(x, y + 19 * scale, width - 150 * scale, 19 * scale),
+                    stock <= 1 ? $"Low stock · {stock} left" : $"{stock} in stock", label);
+                GUI.enabled = quantity > 0;
+                if (DrawButton(new Rect(x + width - 135 * scale, y + 3 * scale, 34 * scale, 29 * scale), "−"))
+                    supplyCart -= step;
+                GUI.enabled = true;
+                GUI.Label(new Rect(x + width - 89 * scale, y + 3 * scale, 40 * scale, 29 * scale),
+                    quantity.ToString(), label);
+                GUI.enabled = item == 4 ? quantity == 0 && stock == 0 : quantity < MotelService.MaxCartQuantity;
+                if (DrawButton(new Rect(x + width - 35 * scale, y + 3 * scale, 35 * scale, 29 * scale), "+"))
+                    supplyCart += step;
                 GUI.enabled = true;
             }
+
+            GUI.EndScrollView();
+            x = catalogArea.x;
+            width = catalogArea.width;
+            int cost = MotelService.CartCost(supplyCart);
+            GUI.enabled = cost > 0 && cost <= service.Cash && service.PendingOrderCount < 9;
+            if (DrawButton(new Rect(x, panel.y + 380 * scale, width, 33 * scale), $"Place order · ${cost}"))
+            {
+                if (lan != null && !lan.IsHost)
+                {
+                    lan.State?.ActionRpc(CartOrderAction, new Vector3(supplyCart & 65535, (uint)supplyCart >> 16, 0));
+                    supplyCart = 0;
+                }
+                else
+                {
+                    int cash = Service.Cash;
+                    SubmitCart(supplyCart, caretaker.Position);
+                    if (Service.Cash != cash)
+                        supplyCart = 0;
+                }
+            }
+            GUI.enabled = true;
         }
     }
 }

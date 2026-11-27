@@ -147,7 +147,7 @@ namespace DesertLantern
 
             foreach (ulong id in departing)
             {
-                if (escorting && guideId == id)
+                if (escorting && !staffEscort && guideId == id)
                 {
                     guest?.Dispose();
                     guest = null;
@@ -156,8 +156,11 @@ namespace DesertLantern
                     SpawnGuest();
                 }
                 MotelService service = Service;
+                service.ReleasePhone(id);
                 service.RecoverBag(id);
                 service.RecoverSupply(id);
+                service.RecoverHousekeepingCart(id);
+                selectedKeys.Remove(id);
                 Service = service;
                 peers[id].Walker.Dispose();
                 peers.Remove(id);
@@ -202,7 +205,8 @@ namespace DesertLantern
 
             lan.State.Motel.Value = new LanMotel
             {
-                Occupied = Occupied, Escorting = escorting, GuestPresent = guest != null,
+                Occupied = Occupied, Escorting = escorting, GuestPresent = guest != null, GuestArriving = guestArriving,
+                VehicleArriving = vehicleArriving, ArrivalCarProgress = arrivalCarProgress,
                 Guest = guest == null ? default : guest.Pose, Service = Service,
                 Bellhop = bellhop == null ? default : bellhop.Pose,
                 VisitorRoom = visitorRoom, Visitor = serviceVisitor == null ? default : serviceVisitor.Pose
@@ -239,8 +243,7 @@ namespace DesertLantern
             }
 
             LanMotel shared = lan.State.Motel.Value;
-            if (guest != null && (!shared.GuestPresent || Occupied != shared.Occupied ||
-                Service.ReservationCancelled(Occupied) != shared.Service.ReservationCancelled(Occupied)))
+            if (guest != null && (!shared.GuestPresent || Occupied != shared.Occupied))
             {
                 guest.Dispose();
                 guest = null;
@@ -248,11 +251,19 @@ namespace DesertLantern
             Occupied = shared.Occupied;
             Service = shared.Service;
             escorting = shared.Escorting;
+            if (guestArriving && !shared.GuestArriving)
+                guestWaitStart = Service.ClockMinute;
+            guestArriving = shared.GuestArriving;
+            vehicleArriving = shared.VehicleArriving;
+            arrivalCarProgress = shared.ArrivalCarProgress;
             ApplyServiceActors(shared, delta);
             if (shared.GuestPresent && Occupied < Guests.Length)
             {
                 if (guest == null)
+                {
+                    guestWaitStart = Service.ClockMinute;
                     guest = new MotelWalker(transform, CurrentGuestModel, shared.Guest.Position);
+                }
                 guest.ApplyReplica(shared.Guest, delta);
             }
         }
@@ -272,33 +283,49 @@ namespace DesertLantern
                 return;
             if (action == ReceptionAction)
                 HandleReception(id, peer.Walker.Position, peer.Route);
+            else if (action == SelectKeyAction && position.x >= 0 && position.x < Guests.Length &&
+                position.x == Mathf.Floor(position.x))
+                PickReceptionKey(id, (int)position.x, peer.Walker.Position);
             else if (action == LuggageAction)
                 TryLuggage(id, peer.Walker.Position);
             else if (action == ClockSpeedAction && (position.x == 1 || position.x == 2 ||
                 position.x == 4 || position.x == 8))
                 SetClockSpeed((byte)position.x);
-            else if (action == AnswerPhoneAction || action == ServeGuestAction || action == HireBellhopAction)
-                HandleGuestAction(action, 0, peer.Walker.Position);
+            else if (action == AnswerPhoneAction || action == DeclinePhoneAction || action == ReturnPhoneAction || action == ServeGuestAction || action == HireBellhopAction)
+                HandleGuestAction(action, 0, peer.Walker.Position, id);
             else if (action == SellUpgradeAction && position.x >= 0 && position.x < 2 * Guests.Length &&
                 position.x == Mathf.Floor(position.x))
-                HandleGuestAction(action, (int)position.x, peer.Walker.Position);
+                HandleGuestAction(action, (int)position.x, peer.Walker.Position, id);
             else if (action == CleanRoomAction && position.x >= 0 && position.x < Guests.Length &&
                 position.y >= 0 && position.y < MotelService.CleaningTaskCount &&
                 position.x == Mathf.Floor(position.x) && position.y == Mathf.Floor(position.y))
-                HandleCleaning((int)position.x, (CleaningTask)(int)position.y, peer.Walker.Position);
+                HandleCleaning(id, (int)position.x, (CleaningTask)(int)position.y, peer.Walker.Position);
             else if (action == LaundryAction)
                 HandleLaundry(peer.Walker.Position);
-            else if (action == SupplyDeliveryAction)
-                HandleSupplyDelivery(id, peer.Walker.Position);
+            else if (action == SupplyDeliveryAction && position.x == (int)Service.Property &&
+                position.y == Service.ActiveOrderNumber && position.z == (int)DeliveryDock.SupplyBay)
+                HandleSupplyDelivery(id, peer.Walker.Position, Service.DeliveryReference);
+            else if (action == DecisionAction)
+                HandleDecision(position, peer.Walker.Position);
+            else if (action == ManagementOfficeAction)
+                HandleManagement(position, peer.Walker.Position);
+            else if (action == ExpansionOfficeAction)
+                HandleExpansionAction(position, peer.Walker.Position);
+            else if (action == PropertyCareAction)
+                HandlePropertyCare(id, position, peer.Walker.Position);
+            else if (action == StaffAction || action == GuestMenuAction)
+                HandleOperations(action, position, peer.Walker.Position);
+            else if (action == CartOrderAction && position.x >= 0 && position.x <= 65535 &&
+                position.y >= 0 && position.y <= 65535 && position.x == Mathf.Floor(position.x) &&
+                position.y == Mathf.Floor(position.y))
+                SubmitCart((int)position.x | ((int)position.y << 16), peer.Walker.Position);
             else if (action == PurchaseAction && Finite(position.x) &&
                 position.x >= 0 && position.x < MotelService.Catalog.Length)
                 TryPurchase((int)position.x, peer.Walker.Position);
-            else if ((action == ConfirmBookingAction || action == CancelBookingAction) &&
-                (position.x == 1 || position.x == 2))
-                UpdateBooking((int)position.x, action == ConfirmBookingAction, peer.Walker.Position);
-            else if (action == AdjustScheduleAction && (position.x == 1 || position.x == 2) &&
-                (position.y == 0 || position.y == 1) && (position.z == -1 || position.z == 1))
-                UpdateSchedule((int)position.x, position.y == 1, (int)position.z, peer.Walker.Position);
+            else if ((action == BookRoomAction || action == EditBookingAction) &&
+                Mathf.Abs(position.x) <= Guests.Length && Mathf.Abs(position.y) <= 31 && Mathf.Abs(position.z) <= int.MaxValue / 2 &&
+                position.x == Mathf.Floor(position.x) && position.y == Mathf.Floor(position.y) && position.z == Mathf.Floor(position.z))
+                ChangeBooking(action, position, peer.Walker.Position, id);
             else if (action == DoorAction && Finite(position.x) && position.x >= 0 && position.x < Guests.Length)
                 ToggleDoor((int)position.x, peer.Walker.Position);
             else if (action == DestinationAction && ValidDestination(position) &&
@@ -314,7 +341,7 @@ namespace DesertLantern
 
         private static bool ValidDestination(Vector3 position) =>
             Finite(position.x) && Finite(position.y) && Finite(position.z) &&
-            Mathf.Abs(position.x) <= 17.1f && position.z >= -15f && position.z <= 13.35f && Mathf.Abs(position.y) <= 1;
+            position.x >= -17.1f && position.x <= MotelWorld.EastBoundary + .5f && position.z >= -15f && position.z <= 13.35f && position.y >= -.75f && position.y <= MotelWorld.UpperFloor + .75f;
 
         private void DrawLanMenu(Rect screen, float scale)
         {

@@ -104,7 +104,7 @@ namespace DesertLantern
 
             Vector3 motion = velocity * delta;
             Vector3 goal = start + motion;
-            goal.x = Mathf.Clamp(goal.x, -16.5f, 16.5f);
+            goal.x = Mathf.Clamp(goal.x, -16.5f, MotelWorld.EastBoundary);
             goal.z = Mathf.Clamp(goal.z, -13.5f, 13.35f);
             motion = goal - start;
             motion.y = fallSpeed * delta;
@@ -121,6 +121,16 @@ namespace DesertLantern
             }
 
             Animate(speed);
+        }
+
+        public void Warp(Vector3 position)
+        {
+            bool enabled = Capsule.enabled;
+            Capsule.enabled = false;
+            root.position = position;
+            velocity = Vector3.zero;
+            fallSpeed = 0;
+            Capsule.enabled = enabled;
         }
 
         public void ApplyReplica(LanPose pose, float delta)

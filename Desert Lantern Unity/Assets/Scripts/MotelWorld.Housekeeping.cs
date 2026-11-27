@@ -5,7 +5,11 @@ namespace DesertLantern
     internal sealed partial class MotelWorld
     {
         public static readonly Vector3 LaundryApproach = new Vector3(-10.78f, 0, 5.28f);
-        private readonly GameObject[,] roomMess = new GameObject[4, MotelService.CleaningTaskCount];
+        private readonly GameObject[,] roomMess = new GameObject[MotelService.RoomCount, MotelService.CleaningTaskCount];
+        private readonly TextMesh[] doorNotices = new TextMesh[MotelService.RoomCount];
+        private readonly GameObject[] lostProperty = new GameObject[MotelService.RoomCount];
+        public static readonly Vector3 CartStation = new Vector3(-10.87f, 0, 6.22f);
+        private Transform housekeepingCart;
         private TextMesh laundryStatus;
         private TextMesh laundryStock;
         private Transform storedVacuum;
@@ -14,23 +18,41 @@ namespace DesertLantern
         public static Vector3 CleaningPoint(int room, CleaningTask task)
         {
             float x = RoomX[room];
-            return task switch
+            Vector3 point = task switch
             {
                 CleaningTask.Trash => new Vector3(x + .5f, 0, 11.62f),
                 CleaningTask.Wipe => new Vector3(x + .92f, 0, 7.62f),
                 CleaningTask.Vacuum => new Vector3(x + .59f, 0, 9.07f),
+                CleaningTask.Mop => new Vector3(x + .5f, 0, 8.15f),
+                CleaningTask.Bathroom => new Vector3(x + .63f, 0, 12.18f),
+                CleaningTask.Towels => new Vector3(x + .54f, 0, 11.44f),
                 _ => new Vector3(x - .02f, 0, 10.41f)
             };
+            return point + Vector3.up * FloorHeight(room);
         }
 
         private void BuildRoomMess(int room)
         {
             float x = RoomX[room];
+            doorNotices[room] = Sign("", new Vector3(x, 1.69f, 6.359f), .092f, new Color32(255, 214, 145, 255));
+            doorNotices[room].gameObject.SetActive(false);
+            lostProperty[room] = Box("Forgotten travel pouch", new Vector3(x + 1.78f, .58f, 10.70f),
+                new Vector3(.27f, .19f, .30f), teal);
+            lostProperty[room].SetActive(false);
+            Box("Bathroom tile", new Vector3(x + 1.36f, .012f, 12.04f), new Vector3(1.85f, .015f, 1.35f), tile);
+            Box("Toilet cistern", new Vector3(x + .55f, .65f, 12.29f), new Vector3(.30f, .41f, .22f), linen);
+            Cylinder("Toilet bowl", new Vector3(x + .55f, .37f, 12.12f), new Vector3(.31f, .10f, .38f), linen);
+            Box("Bathroom vanity", new Vector3(x + 1.16f, .63f, 12.25f), new Vector3(.49f, .70f, .36f), trim);
+            Cylinder("Sink basin", new Vector3(x + 1.16f, .99f, 12.23f), new Vector3(.33f, .036f, .26f), linen);
+            Box("Sink tap", new Vector3(x + 1.16f, 1.065f, 12.35f), new Vector3(.042f, .118f, .067f), iron);
+            Box("Shower mat", new Vector3(x + 1.90f, .043f, 12.18f), new Vector3(.55f, .035f, .51f), linen);
+            Box("Shower riser", new Vector3(x + 2.31f, 1.45f, 12.15f), new Vector3(.038f, 1.31f, .039f), iron);
+            Box("Shower head", new Vector3(x + 2.23f, 2.09f, 12.15f), new Vector3(.19f, .069f, .095f), iron);
             Material spill = Surface(new Color32(87, 62, 33, 255), .55f, 30);
             Material floorDirt = Surface(new Color32(76, 61, 52, 255), .64f, 24);
             Material dirtyLinen = Surface(new Color32(129, 115, 94, 255), .65f, 17);
 
-            Transform trash = Node("Discarded trash", CleaningPoint(room, CleaningTask.Trash));
+            Transform trash = Node("Discarded trash", CleaningPoint(room, CleaningTask.Trash) - roomBuildOffset);
             Piece(trash, "Crumpled paper", new Vector3(-.27f, .041f, .05f),
                 new Vector3(.27f, .064f, .19f), linen).transform.localRotation = Quaternion.Euler(4, 24, -7);
             Piece(trash, "Food carton", new Vector3(.18f, .053f, -.15f),
@@ -45,7 +67,7 @@ namespace DesertLantern
                 Piece(table, "Coffee spill edge", new Vector3((i - 2) * .068f, 0, Mathf.Sin(i * 1.4f) * .069f),
                     new Vector3(.12f, .004f, .14f), spill).transform.localRotation = Quaternion.Euler(0, i * 23, 0);
 
-            Transform floor = Node("Carpet debris", CleaningPoint(room, CleaningTask.Vacuum));
+            Transform floor = Node("Carpet debris", CleaningPoint(room, CleaningTask.Vacuum) - roomBuildOffset);
             for (int i = 0; i < 11; i++)
             {
                 float angle = i * 2.39f;
@@ -74,6 +96,13 @@ namespace DesertLantern
             roomMess[room, (int)CleaningTask.Vacuum] = floor.gameObject;
             roomMess[room, (int)CleaningTask.Strip] = bedding.gameObject;
             roomMess[room, (int)CleaningTask.MakeBeds] = stripped.gameObject;
+            foreach (CleaningTask task in new[] { CleaningTask.Mop, CleaningTask.Bathroom, CleaningTask.Towels })
+            {
+                Vector3 position = CleaningPoint(room, task) - roomBuildOffset;
+                Vector3 size = task == CleaningTask.Towels ? new Vector3(.28f, .055f, .32f) : new Vector3(.39f, .012f, .27f);
+                roomMess[room, (int)task] = Box(task == CleaningTask.Towels ? "Used towel" : "Grimy surface",
+                    position + Vector3.up * .026f, size, task == CleaningTask.Towels ? dirtyLinen : spill);
+            }
             for (int task = 0; task < MotelService.CleaningTaskCount; task++)
                 roomMess[room, task].SetActive(false);
         }
@@ -95,7 +124,33 @@ namespace DesertLantern
             storedVacuum = BuildVacuum("Stored vacuum", new Vector3(-11.69f, 0, 4.48f));
             storedVacuum.gameObject.SetActive(false);
 
+            housekeepingCart = Node("Housekeeping cart", CartStation);
+            Piece(housekeepingCart, "Low cart shelf", new Vector3(0, .29f, 0), new Vector3(.38f, .07f, .51f), oak);
+            Piece(housekeepingCart, "Top cart shelf", new Vector3(0, .76f, 0), new Vector3(.44f, .075f, .55f), trim);
+            Piece(housekeepingCart, "Folded linens", new Vector3(-.09f, .80f, .04f), new Vector3(.18f, .08f, .26f), linen);
+            Piece(housekeepingCart, "Disinfectant bottle", new Vector3(.12f, .87f, -.11f), new Vector3(.08f, .16f, .08f), teal);
+            Piece(housekeepingCart, "Roll of bags", new Vector3(.08f, .81f, .11f), new Vector3(.10f, .09f, .17f), dark);
+            for (int corner = 0; corner < 4; corner++)
+            {
+                float x = corner % 2 == 0 ? -.17f : .17f;
+                float z = corner < 2 ? -.21f : .21f;
+                Piece(housekeepingCart, "Cart frame", new Vector3(x, .47f, z), new Vector3(.04f, .63f, .042f), iron);
+                Piece(housekeepingCart, "Cart caster", new Vector3(x, .13f, z), new Vector3(.08f, .14f, .12f), dark);
+            }
+
             cleaningTools[(int)CleaningTask.Vacuum] = BuildVacuum("Vacuum in use", Vector3.zero);
+            Transform mop = Node("Mop in use", Vector3.zero);
+            Piece(mop, "Mop handle", new Vector3(0, .55f, 0), new Vector3(.038f, 1.10f, .039f), oak);
+            Piece(mop, "Cotton mop head", new Vector3(0, .045f, 0), new Vector3(.26f, .07f, .18f), linen);
+            cleaningTools[(int)CleaningTask.Mop] = mop;
+            Transform brush = Node("Toilet brush", Vector3.zero);
+            Piece(brush, "Brush handle", new Vector3(0, .082f, 0), new Vector3(.027f, .23f, .027f), trim);
+            Piece(brush, "Brush bristles", new Vector3(0, -.045f, 0), new Vector3(.086f, .058f, .086f), dark);
+            cleaningTools[(int)CleaningTask.Bathroom] = brush;
+            Transform basket = Node("Laundry basket", Vector3.zero);
+            Piece(basket, "Basket shell", Vector3.zero, new Vector3(.32f, .21f, .28f), oak);
+            Piece(basket, "Basket linen", new Vector3(0, .11f, 0), new Vector3(.27f, .068f, .24f), linen);
+            cleaningTools[(int)CleaningTask.Towels] = basket;
             for (int index = 0; index < cleaningTools.Length; index++)
             {
                 if (cleaningTools[index] == null)
@@ -134,17 +189,29 @@ namespace DesertLantern
                     tool.gameObject.SetActive(show);
                 if (!show)
                     continue;
-                Vector3 position = selected == CleaningTask.Vacuum
+                Vector3 position = (selected == CleaningTask.Vacuum || selected == CleaningTask.Mop)
                     ? worker.Position + worker.Orientation * new Vector3(.30f, 0, .44f)
                     : worker.CarryPosition;
                 tool.SetPositionAndRotation(position, worker.Orientation);
             }
         }
 
-        public void ShowHousekeeping(MotelService service)
+        public void ShowHousekeeping(MotelService service, MotelWalker cartCarrier)
         {
+            housekeepingCart.gameObject.SetActive(!service.CartInUse || cartCarrier != null);
+            if (cartCarrier != null)
+                housekeepingCart.SetPositionAndRotation(cartCarrier.Position + cartCarrier.Orientation * new Vector3(.42f, 0, .52f),
+                    cartCarrier.Orientation);
+            else
+                housekeepingCart.SetPositionAndRotation(CartStation + Vector3.left * .48f, Quaternion.identity);
             for (int room = 0; room < RoomX.Length; room++)
             {
+                string notice = service.DoNotDisturb(room) ? "DO NOT DISTURB" : service.RoomUnusable(room) ? "OUT OF SERVICE" : "";
+                TextMesh sign = doorNotices[room];
+                if (sign.text != notice)
+                    sign.text = notice;
+                sign.gameObject.SetActive(notice.Length > 0);
+                lostProperty[room].SetActive(service.ForgottenItem(room));
                 for (int i = 0; i < MotelService.CleaningTaskCount; i++)
                 {
                     CleaningTask task = (CleaningTask)i;
@@ -159,7 +226,7 @@ namespace DesertLantern
             string stock = $"Bags {service.TrashBags}   Soap {service.Detergent}";
             if (laundryStock.text != stock)
                 laundryStock.text = stock;
-            string status = service.LaundryRunning ? "Washing" : "Ready";
+            string status = service.WasherBroken ? "Out of order" : service.LaundryRunning ? "Washing" : "Ready";
             if (laundryStatus.text != status)
                 laundryStatus.text = status;
         }

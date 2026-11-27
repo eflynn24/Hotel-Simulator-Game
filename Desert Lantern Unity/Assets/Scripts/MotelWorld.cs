@@ -12,9 +12,16 @@ namespace DesertLantern
         public static readonly Vector3 OfficeApproach = new Vector3(-9.75f, 0, 3.4f);
         public static readonly Vector3 GuestSpawn = new Vector3(-9.57f, 0, 5.5f);
         public static readonly Vector3 OfficeSign = new Vector3(-9.55f, 4.1f, 3.60f);
-        public static readonly float[] RoomX = { -4f, 1f, 6f, 11f };
-        public static Vector3 RoomApproach(int room) => new Vector3(RoomX[room], 0, 5.75f);
-        public static Vector3 RoomSign(int room) => new Vector3(RoomX[room], 2.9f, 6.48f);
+        public const float UpperFloor = 3.08f;
+        public static readonly float[] RoomX = { -4f, 1f, 6f, 11f, -4f, 1f, 6f, 11f, 19.5f, 24.5f, 19.5f, 24.5f };
+        public static readonly Vector3 StairFoot = new Vector3(14.83f, 0, .08f);
+        public static readonly Vector3 StairTop = new Vector3(14.83f, UpperFloor, 5.75f);
+        public static float FloorHeight(int room) => (room >= 4 && room < 8) || room >= 10 ? UpperFloor : 0f;
+        public static bool NearFloor(Vector3 a, Vector3 b) => Mathf.Abs(a.y - b.y) < .75f;
+        public static bool OnStairs(Vector3 p) => p.x > 13.8f && p.x < 15.9f && p.z > .08f && p.z < 5.69f;
+        public static Vector3 RoomApproach(int room) => new Vector3(RoomX[room], FloorHeight(room), 5.75f);
+        public static Vector3 RoomSign(int room) => new Vector3(RoomX[room], FloorHeight(room) + 2.9f, 6.48f);
+        private Vector3 roomBuildOffset;
 
         private readonly Transform root;
         private readonly Shader shader;
@@ -52,9 +59,10 @@ namespace DesertLantern
             for (int i = -20; i <= 20; i++)
                 Box("Road center stripe", new Vector3(i * 7, .009f, -17), new Vector3(2.8f, .009f, .09f), cream);
 
-            for (int i = 0; i < RoomX.Length; i++)
-                BuildRoom(i, overview);
+            BuildRoomWing(overview);
+            BuildExpansionGrounds();
             BuildUpperWalkway();
+            BuildExternalStairs();
             BuildReception(overview);
             BuildRoadsideFeatures();
             BuildDesert();
@@ -139,7 +147,7 @@ namespace DesertLantern
         {
             var sign = new GameObject(text);
             sign.transform.SetParent(root, false);
-            sign.transform.localPosition = position;
+            sign.transform.localPosition = position + roomBuildOffset;
             TextMesh mesh = sign.AddComponent<TextMesh>();
             mesh.font = signFont;
             mesh.GetComponent<MeshRenderer>().sharedMaterial = signMaterial;
@@ -212,7 +220,7 @@ namespace DesertLantern
             piece.name = name;
             piece.layer = layer;
             piece.transform.SetParent(root, false);
-            piece.transform.localPosition = position;
+            piece.transform.localPosition = position + roomBuildOffset;
             piece.transform.localScale = scale;
             piece.GetComponent<MeshRenderer>().sharedMaterial = material;
             piece.GetComponent<BoxCollider>().enabled = layer != 0;

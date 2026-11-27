@@ -5,17 +5,20 @@ namespace DesertLantern
 {
     internal sealed partial class MotelWorld
     {
-        private static readonly float[] ParkingX = { -9.20f, -4.60f, 4.40f, 10.50f };
-        private static readonly float[] ParkingLanes = { -11.4f, -6.9f, 0, 7.35f, 12.5f };
-        public static Vector3 CarApproach(int room) => new Vector3(ParkingX[room], 0, -7.25f);
-        private static Vector3 TrunkBagPosition(int room) => new Vector3(ParkingX[room], .86f, -6.38f);
-        private readonly Rigidbody[] bags = new Rigidbody[4];
-        private readonly bool[] bagDropped = new bool[4];
-        private readonly Transform[] trunks = new Transform[4];
+        private static readonly float[] ParkingX = { -9.20f, -4.60f, 4.40f, 10.50f, -9.20f, -4.60f, 4.40f, 10.50f, 19.5f, 24.5f, 19.5f, 24.5f };
+        private static readonly float[] ParkingLanes = { -11.4f, -6.9f, 0, 7.35f, 12.5f, 17f, 22f, 27f };
+        private static float ParkingRow(int room) => FloorHeight(room) > 0 ? -5.60f : 0f;
+        public static Vector3 CarApproach(int room) => new Vector3(ParkingX[room], 0, -7.25f + ParkingRow(room));
+        private static Vector3 TrunkBagPosition(int room) => new Vector3(ParkingX[room], .86f, -6.38f + ParkingRow(room));
+        private readonly Rigidbody[] bags = new Rigidbody[MotelService.RoomCount];
+        private readonly bool[] bagDropped = new bool[MotelService.RoomCount];
+        private readonly BoxCollider[] carColliders = new BoxCollider[MotelService.RoomCount];
+        private readonly Transform[] trunks = new Transform[MotelService.RoomCount];
         public static readonly Vector3 DeliveryBay = new Vector3(-13.80f, 0, 1.20f);
         public static readonly Vector3 SupplyStorage = new Vector3(-8.46f, 0, 5.55f);
         private static readonly Vector3 CrateAtBay = new Vector3(-13.80f, .55f, 2.03f);
         private Transform supplyCrate;
+        private readonly GameObject[] waitingParcels = new GameObject[8];
         private BoxCollider supplyCollider;
 
         public static readonly Vector3 PhoneApproach = new Vector3(-8.98f, 0, 6.72f);
@@ -26,15 +29,17 @@ namespace DesertLantern
         private AudioSource deskPhone;
         private AudioClip ringClip;
 
-        private readonly GameObject[] tvIndicator = new GameObject[4];
-        private readonly GameObject[] roomServiceTray = new GameObject[4];
+        private readonly GameObject[] tvIndicator = new GameObject[MotelService.RoomCount];
+        private readonly GameObject[] roomServiceTray = new GameObject[MotelService.RoomCount];
 
         public void ShowPurchasedServices(MotelService service)
         {
             for (int room = 0; room < tvIndicator.Length; room++)
             {
                 int bit = 1 << room;
-                tvIndicator[room].SetActive((service.ActiveRooms & service.TvPackages & bit) != 0);
+                tvIndicator[room].SetActive((service.ActiveRooms & service.TvPackages & bit) != 0 &&
+                    !service.IsBroken(room, Fixture.Television));
+                roomLighting[room].enabled = !service.IsBroken(room, Fixture.Lights);
                 roomServiceTray[room].SetActive((service.ActiveRooms & service.MealOrders & bit) != 0);
             }
         }
@@ -43,8 +48,8 @@ namespace DesertLantern
         {
             QualitySettings.pixelLightCount = Mathf.Max(QualitySettings.pixelLightCount, 8);
             OutdoorLamp(new Vector3(-9.75f, 2.23f, 3.45f), 6.1f);
-            foreach (float x in RoomX)
-                OutdoorLamp(new Vector3(x + .82f, 2.56f, 5.98f), 6.2f);
+            for (int room = 0; room < RoomX.Length; room++)
+                OutdoorLamp(new Vector3(RoomX[room] + .82f, FloorHeight(room) + 2.56f, 5.98f), 6.2f);
             foreach (float x in new[] { -13.85f, 13.10f })
             {
                 Box("Parking lamp pole", new Vector3(x, 2.18f, -.85f),
@@ -69,13 +74,16 @@ namespace DesertLantern
 
         private void BuildDeskPhone()
         {
-            Vector3 basePosition = PhonePosition - Vector3.up * .16f;
-            Box("Telephone base", basePosition, new Vector3(.34f, .10f, .24f), dark);
-            Box("Telephone handset", basePosition + new Vector3(0, .085f, .015f),
-                new Vector3(.37f, .08f, .085f), dark);
+            Vector3 basePosition = PhonePosition - Vector3.up * .15f;
+            Box("Telephone base", basePosition, new Vector3(.34f, .12f, .26f), cream);
+            Primitive(PrimitiveType.Sphere, "Telephone handset bridge", basePosition + new Vector3(0, .108f, .057f),
+                new Vector3(.36f, .071f, .088f), linen);
+            for (int end = -1; end <= 1; end += 2)
+                Primitive(PrimitiveType.Sphere, "Telephone receiver cup", basePosition + new Vector3(end * .126f, .087f, .047f),
+                    new Vector3(.133f, .092f, .124f), cream);
             for (int key = 0; key < 9; key++)
-                Box("Phone keypad", basePosition + new Vector3(.055f * (key % 3 - 1), .058f, -.027f - .022f * (key / 3)),
-                    new Vector3(.033f, .012f, .012f), cream);
+                Box("Phone keypad", basePosition + new Vector3(.055f * (key % 3 - 1), .065f, -.027f - .022f * (key / 3)),
+                    new Vector3(.033f, .012f, .012f), trim);
         }
 
         public void ShowDeskPhone(bool ringing)
@@ -158,6 +166,13 @@ namespace DesertLantern
             supplyCollider = supplyCrate.gameObject.AddComponent<BoxCollider>();
             supplyCollider.size = new Vector3(.68f, .49f, .48f);
             supplyCrate.gameObject.SetActive(false);
+            for (int index = 0; index < waitingParcels.Length; index++)
+            {
+                Vector3 offset = new Vector3((index % 2 == 0 ? 1 : -1) * .49f, -.09f + index / 2 * .19f, .15f);
+                waitingParcels[index] = Box("Waiting delivery parcel", CrateAtBay + offset,
+                    new Vector3(.31f, .19f, .40f), carton);
+                waitingParcels[index].SetActive(false);
+            }
         }
 
         public void ShowSupplyDelivery(MotelService service, MotelWalker carrier)
@@ -173,6 +188,9 @@ namespace DesertLantern
                     stockProps[kind, unit].SetActive(unit < count);
             }
             bool onPallet = service.Delivery == SupplyDelivery.AtBay;
+            int waiting = service.ReadyOrderCount - (onPallet ? 1 : 0);
+            for (int index = 0; index < waitingParcels.Length; index++)
+                waitingParcels[index].SetActive(index < waiting);
             bool visible = onPallet || carrier != null;
             supplyCrate.gameObject.SetActive(visible);
             if (!visible)
@@ -210,7 +228,7 @@ namespace DesertLantern
             shrub = Surface(new Color32(81, 107, 70, 255), .53f, 9);
             Palm(new Vector3(-13.64f, .24f, -10.12f), 4.8f);
             Palm(new Vector3(-15.6f, 0, -1.23f), 5.72f);
-            Palm(new Vector3(14.3f, 0, 3.88f), 5.41f);
+            Palm(new Vector3(19.2f, 0, 2.80f), 5.41f);
             Palm(new Vector3(15.34f, 0, -6.90f), 4.68f);
             var rng = new System.Random(167);
             for (int i = 0; i < 24; i++)
@@ -302,9 +320,17 @@ namespace DesertLantern
             var vehicleWine = Surface(new Color32(104, 54, 51, 255), .29f, 9);
             var vehicleSage = Surface(new Color32(79, 103, 76, 255), .33f, 9);
             Material[] palette = { vehicleBlue, vehicleTan, vehicleWine, vehicleSage };
-            for (int car = 0; car < ParkingX.Length; car++)
+            for (int car = 0; car < (overview ? MotelService.BaseRoomCount : ParkingX.Length); car++)
+            {
                 trunks[car] = Sedan("Guest " + (car + 1) + " parked sedan",
-                    new Vector3(ParkingX[car], 0, -4.63f), palette[car]);
+                    new Vector3(ParkingX[car], 0, -4.63f + ParkingRow(car)), palette[car % palette.Length]);
+                if (!overview)
+                {
+                    Transform sedan = trunks[car].parent;
+                    carColliders[car] = sedan.Find("Lower chassis").GetComponent<BoxCollider>();
+                    sedan.gameObject.SetActive(false);
+                }
+            }
             if (overview)
                 return;
 
@@ -350,9 +376,13 @@ namespace DesertLantern
                 for (int end = -1; end <= 1; end += 2)
                 {
                     Vector3 tireAt = center + new Vector3(side * .83f, .34f, end * 1.28f);
-                    Cylinder("Tire", tireAt, new Vector3(.33f, .117f, .33f), rubber).transform.rotation = Quaternion.Euler(0, 0, 90);
-                    Cylinder("Hubcap", tireAt + new Vector3(side * .120f, 0, 0),
-                        new Vector3(.179f, .017f, .179f), chrome).transform.rotation = Quaternion.Euler(0, 0, 90);
+                    Transform tire = Cylinder("Tire", tireAt, new Vector3(.33f, .117f, .33f), rubber).transform;
+                    tire.rotation = Quaternion.Euler(0, 0, 90);
+                    tire.SetParent(model, true);
+                    Transform hubcap = Cylinder("Hubcap", tireAt + new Vector3(side * .120f, 0, 0),
+                        new Vector3(.179f, .017f, .179f), chrome).transform;
+                    hubcap.rotation = Quaternion.Euler(0, 0, 90);
+                    hubcap.SetParent(model, true);
                     Piece(model, end > 0 ? "Headlamp" : "Tail lamp",
                         new Vector3(side * .58f, .69f, end * 2.10f),
                         new Vector3(.37f, .13f, .037f), end > 0 ? lamp : carpet);
@@ -368,9 +398,9 @@ namespace DesertLantern
 
         public static void RouteAcrossParking(Queue<Vector3> route, Vector3 from, Vector3 to)
         {
-            bool northbound = from.z < -6.88f && to.z > -2.12f;
-            bool southbound = from.z > -2.12f && to.z < -6.88f;
-            if (!northbound && !southbound)
+            int fromZone = ParkingZone(from.z);
+            int toZone = ParkingZone(to.z);
+            if (fromZone == toZone)
                 return;
 
             float lane = 0;
@@ -386,8 +416,61 @@ namespace DesertLantern
                 }
             }
 
-            route.Enqueue(new Vector3(lane, 0, northbound ? -7.14f : -2.12f));
-            route.Enqueue(new Vector3(lane, 0, northbound ? -2.12f : -7.14f));
+            route.Enqueue(new Vector3(lane, 0, ParkingCorridor(fromZone)));
+            route.Enqueue(new Vector3(lane, 0, ParkingCorridor(toZone)));
+        }
+
+        private static int ParkingZone(float z) => z > -2.2f ? 0 : z >= -8.12f ? 1 : 2;
+
+        private static float ParkingCorridor(int zone) => zone == 0 ? -2.12f : zone == 1 ? -7.19f : -12.84f;
+
+        internal static LanPose GuestCarPose(int room, float progress)
+        {
+            Vector3 parked = new Vector3(ParkingX[room], 0, -4.63f + ParkingRow(room));
+            progress = Mathf.Clamp01(progress);
+            if (progress >= 1)
+                return new LanPose { Position = parked, Rotation = Quaternion.identity };
+
+            const float turnStart = .72f;
+            Vector3 corner = parked + new Vector3(-2.5f, 0, -3.15f);
+            Vector3 entrance = new Vector3(-17f, 0, corner.z);
+            if (progress < turnStart)
+            {
+                return new LanPose
+                {
+                    Position = Vector3.Lerp(entrance, corner, progress / turnStart),
+                    Rotation = Quaternion.LookRotation(Vector3.right)
+                };
+            }
+
+            float turn = (progress - turnStart) / (1 - turnStart);
+            Vector3 bend = new Vector3(parked.x, 0, corner.z);
+            Vector3 first = Vector3.Lerp(corner, bend, turn);
+            Vector3 second = Vector3.Lerp(bend, parked, turn);
+            return new LanPose
+            {
+                Position = Vector3.Lerp(first, second, turn),
+                Rotation = Quaternion.LookRotation(second - first)
+            };
+        }
+
+        public void ShowGuestCars(MotelService service, int arrivingRoom, float progress)
+        {
+            for (int room = 0; room < trunks.Length; room++)
+            {
+                Transform sedan = trunks[room].parent;
+                bool arriving = room == arrivingRoom;
+                bool visible = arriving || (service.ActiveRooms & (1 << room)) != 0;
+                if (sedan.gameObject.activeSelf != visible)
+                    sedan.gameObject.SetActive(visible);
+                if (!visible)
+                    continue;
+
+                float carProgress = arriving ? progress : 1;
+                LanPose pose = GuestCarPose(room, carProgress);
+                sedan.SetPositionAndRotation(pose.Position, pose.Rotation);
+                carColliders[room].enabled = carProgress >= 1;
+            }
         }
 
         public void AnimateService(MotelService service, MotelWalker carrier, float delta)

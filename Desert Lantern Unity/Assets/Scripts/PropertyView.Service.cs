@@ -10,6 +10,8 @@ namespace DesertLantern
         private const byte SupplyDeliveryAction = 7;
         private const byte ClockSpeedAction = 9;
         private const byte AnswerPhoneAction = 10;
+        private const byte DeclinePhoneAction = 26;
+        private const byte ReturnPhoneAction = 27;
         private const byte ServeGuestAction = 11;
         private const byte HireBellhopAction = 12;
         private const byte SellUpgradeAction = 13;
@@ -17,11 +19,13 @@ namespace DesertLantern
         private static readonly Vector3 ServiceQueue = new Vector3(-8.86f, 0, 5.01f);
         private readonly Queue<Vector3> bellhopRoute = new Queue<Vector3>();
         private readonly Queue<Vector3> visitorRoute = new Queue<Vector3>();
-        private readonly MotelWalker[] backgroundGuests = new MotelWalker[4];
+        private readonly MotelWalker[] backgroundGuests = new MotelWalker[MotelService.RoomCount];
+        private readonly MotelWalker[] roomVisitors = new MotelWalker[MotelService.RoomCount];
         private MotelWalker bellhop;
         private MotelWalker serviceVisitor;
         private int visitorRoom = NoRoom;
-        private Vector3 bellhopTarget;
+        private Vector3 bellhopTarget, bellhopProgress;
+        private float bellhopStall;
 
         private void UpdateServiceActors(float delta)
         {
@@ -31,20 +35,54 @@ namespace DesertLantern
                 if (bellhop == null)
                 {
                     bellhop = CreateServiceWalker("Guest-Vic", BellhopStation);
-                    bellhopTarget = BellhopStation;
+                    bellhopTarget = bellhopProgress = BellhopStation;
+                    bellhopStall = 0;
                 }
-                bool collecting = service.Bag == LuggageStatus.InCar;
+                bool collecting = service.Bag == LuggageStatus.InCar &&
+                    (!service.StaffUrgentOnly(0) || service.CheckoutWaiting() == NoRoom);
                 bool bringing = service.Bag == LuggageStatus.Carried && service.Carrier == MotelService.BellhopId;
                 Vector3 target = collecting ? MotelWorld.CarApproach(service.BagRoom)
                     : bringing ? MotelWorld.BagDrop(service.BagRoom) : BellhopStation;
                 if (target != bellhopTarget)
                 {
                     bellhopTarget = target;
+                    bellhopProgress = bellhop.Position;
+                    bellhopStall = 0;
                     QueueDestination(bellhopRoute, bellhop.Position, target);
                 }
+                if (bringing && service.DoorUnlocked(service.BagRoom) &&
+                    (service.OpenDoors & (1 << service.BagRoom)) == 0 &&
+                    MotelWorld.NearFloor(bellhop.Position, MotelWorld.RoomDoor(service.BagRoom)) &&
+                    MotelWalker.Distance(bellhop.Position, MotelWorld.RoomDoor(service.BagRoom)) < 1.35f)
+                {
+                    service.ToggleDoor(service.BagRoom);
+                    Service = service;
+                }
                 Drive(bellhop, bellhopRoute, Vector3.zero, true, delta);
-                if (collecting || bringing)
-                    TryLuggage(MotelService.BellhopId, bellhop.Position);
+                if ((collecting || bringing) && !TryLuggage(MotelService.BellhopId, bellhop.Position))
+                {
+                    if (Vector3.Distance(bellhopProgress, bellhop.Position) >= .28f)
+                    {
+                        bellhopProgress = bellhop.Position;
+                        bellhopStall = 0;
+                    }
+                    else
+                        bellhopStall += delta;
+                    if (bellhopStall >= 12 && (!bringing || !service.IsBroken(service.BagRoom, Fixture.DoorLock)))
+                    {
+                        bellhop.Warp(target);
+                        bellhopRoute.Clear();
+                        bellhopStall = 0;
+                        TryLuggage(MotelService.BellhopId, bellhop.Position);
+                    }
+                }
+            }
+
+            if (!service.BellhopHired && bellhop != null)
+            {
+                bellhop.Dispose();
+                bellhop = null;
+                bellhopRoute.Clear();
             }
 
             int nextVisitor = NoRoom;
@@ -100,6 +138,11 @@ namespace DesertLantern
                     bellhop = new MotelWalker(transform, "Guest-Vic", shared.Bellhop.Position);
                 bellhop.ApplyReplica(shared.Bellhop, delta);
             }
+            else if (bellhop != null)
+            {
+                bellhop.Dispose();
+                bellhop = null;
+            }
             if (shared.VisitorRoom != visitorRoom)
             {
                 serviceVisitor?.Dispose();
@@ -111,30 +154,107 @@ namespace DesertLantern
             serviceVisitor?.ApplyReplica(shared.Visitor, delta);
         }
 
+        private static readonly Vector3 GuestExit = new Vector3(-6.9f, 0, -11.8f);
+        private readonly Queue<Vector3>[] residentRoutes = new Queue<Vector3>[MotelService.RoomCount];
+        private readonly Vector3[] residentTargets = new Vector3[MotelService.RoomCount];
+        private readonly bool[] residentsAway = new bool[MotelService.RoomCount];
+
+        private static Vector3 ResidentPoint(int room, GuestActivity activity)
+        {
+            float x = MotelWorld.RoomX[room], floor = MotelWorld.FloorHeight(room);
+            return activity switch
+            {
+                GuestActivity.AtAttractions => GuestExit,
+                GuestActivity.AtVending => new Vector3(-7.24f + .29f * (room % 4), 0, 3.78f),
+                GuestActivity.Walking => new Vector3(-5.6f + (room % 4) * 2.1f, 0, 3.91f),
+                GuestActivity.Socializing => new Vector3(-5.8f + .65f * (room % 3), 0, 3.24f + .75f * (room / 3 % 2)),
+                GuestActivity.SeekingHelp => ServiceQueue - Vector3.right * .66f,
+                GuestActivity.Showering => new Vector3(x + 1.81f, floor, 11.84f),
+                GuestActivity.WatchingTelevision => new Vector3(x + .38f, floor, 9.12f),
+                GuestActivity.HostingVisitor => new Vector3(x + .63f, floor, 8.51f),
+                _ => new Vector3(x + .55f, floor, 8.52f)
+            };
+        }
+
+        private void WalkResident(int room, Vector3 target, GuestActivity activity, float delta)
+        {
+            var walker = backgroundGuests[room];
+            Queue<Vector3> route = residentRoutes[room] ??= new Queue<Vector3>();
+            if (residentTargets[room] != target)
+            {
+                residentTargets[room] = target;
+                QueueDestination(route, walker.Position, target);
+            }
+            while (route.TryPeek(out Vector3 next) && Vector3.Distance(walker.Position, next) < .20f)
+                route.Dequeue();
+            if (route.TryPeek(out Vector3 waypoint))
+            {
+                Vector3 direction = waypoint - walker.Position;
+                Vector3 forward = Vector3.ProjectOnPlane(direction, Vector3.up);
+                Quaternion rotation = forward.sqrMagnitude > .001f ? Quaternion.LookRotation(forward) : walker.Orientation;
+                const float speed = 2.65f;
+                walker.ApplyReplica(new LanPose
+                {
+                    Position = Vector3.MoveTowards(walker.Position, waypoint, speed * delta / Mathf.Max(.001f, 1 - Mathf.Exp(-19f * delta))),
+                    Rotation = rotation,
+                    Speed = speed
+                }, delta);
+                return;
+            }
+            Quaternion idle = activity == GuestActivity.WatchingTelevision ? Quaternion.Euler(0, 90f, 0)
+                : activity == GuestActivity.Socializing ? Quaternion.Euler(0, room % 2 == 0 ? 55f : 225f, 0)
+                : Quaternion.Euler(0, 180f, 0);
+            walker.ApplyReplica(new LanPose { Position = target, Rotation = idle }, delta);
+        }
+
         private void UpdateVisibleGuests(float delta)
         {
             MotelService service = Service;
-            int queued = 0;
             for (int room = 0; room < Guests.Length; room++)
             {
+                bool hosting = (service.ActiveRooms & (1 << room)) != 0 && service.Activity(room) == GuestActivity.HostingVisitor;
+                if (hosting)
+                {
+                    if (roomVisitors[room] == null)
+                    {
+                        Vector3 chair = new Vector3(MotelWorld.RoomX[room] + .85f, MotelWorld.FloorHeight(room), 7.91f);
+                        roomVisitors[room] = CreateServiceWalker(Guests[(room + 3) % Guests.Length], chair);
+                    }
+                }
+                else if (roomVisitors[room] != null)
+                {
+                    roomVisitors[room].Dispose();
+                    roomVisitors[room] = null;
+                }
+
                 bool staying = (service.ActiveRooms & (1 << room)) != 0 && room != visitorRoom;
-                bool waiting = guest != null && room != Occupied && service.ArrivalReady(room);
-                if (!staying && !waiting)
+                GuestActivity activity = staying ? service.Activity(room) : GuestActivity.InRoom;
+                bool leaving = staying && activity == GuestActivity.AtAttractions;
+                if (leaving && (backgroundGuests[room] == null || Vector3.Distance(backgroundGuests[room].Position, GuestExit) < .35f))
                 {
                     backgroundGuests[room]?.Dispose();
                     backgroundGuests[room] = null;
+                    residentsAway[room] = true;
                     continue;
                 }
-                Vector3 point = staying
-                    ? new Vector3(MotelWorld.RoomX[room] + .55f, 0, 8.52f)
-                    : new Vector3(-10.96f, 0, 5.11f + .62f * queued++);
-                if (backgroundGuests[room] == null)
-                    backgroundGuests[room] = new MotelWalker(transform, Guests[room], point);
-                backgroundGuests[room].ApplyReplica(new LanPose
+                if (!staying)
                 {
-                    Position = point,
-                    Rotation = Quaternion.Euler(0, staying ? 180f : 55f, 0)
-                }, delta);
+                    backgroundGuests[room]?.Dispose();
+                    backgroundGuests[room] = null;
+                    residentRoutes[room]?.Clear();
+                    residentsAway[room] = false;
+                    continue;
+                }
+                Vector3 point = ResidentPoint(room, activity);
+                if (backgroundGuests[room] == null)
+                {
+                    Vector3 initial = residentsAway[room] ? GuestExit : ResidentPoint(room, GuestActivity.InRoom);
+                    backgroundGuests[room] = new MotelWalker(transform, Guests[room], initial);
+                    backgroundGuests[room].ApplyReplica(new LanPose { Position = initial, Rotation = Quaternion.Euler(0, 55f, 0) }, delta);
+                    residentTargets[room] = new Vector3(float.PositiveInfinity, 0, 0);
+                    residentsAway[room] = false;
+                }
+                WalkResident(room, point, activity, delta);
             }
         }
 
@@ -155,27 +275,29 @@ namespace DesertLantern
             return NoRoom;
         }
 
-        private void HandleGuestAction(byte action, int room, Vector3 point)
+        private void HandleGuestAction(byte action, int room, Vector3 point, ulong worker)
         {
             MotelService service = Service;
             if (action == AnswerPhoneAction && AtPhone(point))
-            {
-                int caller = service.WaitingRequest(true);
-                if (caller != NoRoom)
-                    service.AcknowledgeRequest(caller);
-            }
+                service.TryAnswerPhone(worker);
+            else if (action == DeclinePhoneAction && AtPhone(point))
+                service.DeclinePhone(worker);
+            else if (action == ReturnPhoneAction && AtPhone(point))
+                service.ReturnBookingCall(worker);
             else if (action == ServeGuestAction)
             {
                 int guestRoom = GuestToServe(point);
                 if (guestRoom != NoRoom)
-                    service.GiveTowel(guestRoom);
+                    service.ServeRequest(guestRoom);
             }
-            else if (AtComputer(point))
+            else if (action == HireBellhopAction && AtComputer(point))
+                service.HireBellhop();
+            else if (action == SellUpgradeAction)
             {
-                if (action == HireBellhopAction)
-                    service.HireBellhop();
-                else if (action == SellUpgradeAction)
-                    service.SellUpgrade(room % Guests.Length, room >= Guests.Length);
+                int target = room % Guests.Length;
+                Vector3 door = MotelWorld.RoomDoor(target);
+                if (MotelWorld.NearFloor(point, door) && MotelWalker.Distance(point, door) < 1.5f)
+                    service.SellUpgrade(target, room >= Guests.Length);
             }
             Service = service;
         }
@@ -185,16 +307,17 @@ namespace DesertLantern
             if (lan != null && !lan.IsHost)
                 lan.State?.ActionRpc(action, new Vector3(room, 0, 0));
             else
-                HandleGuestAction(action, room, caretaker.Position);
+                HandleGuestAction(action, room, caretaker.Position, LocalWorker);
         }
 
         private void DrawGuestServiceMarkers(float scale)
         {
-            bool ringing = Service.WaitingRequest(true) != NoRoom;
-            if (ringing && DrawWorldButton(MotelWorld.PhonePosition + Vector3.up * .75f, "Answer phone", 150 * scale, scale))
+            if ((InsideOffice(caretaker.Position) || Service.PhoneRinging) &&
+                DrawWorldButton(MotelWorld.PhonePosition + Vector3.up * .55f,
+                    Service.PhoneRinging ? "Answer phone" : "Telephone", 127 * scale, scale))
             {
                 if (AtPhone(caretaker.Position))
-                    RequestGuestAction(AnswerPhoneAction);
+                    OpenPhone();
                 else
                     SetDestination(MotelWorld.PhoneApproach);
             }
@@ -210,23 +333,22 @@ namespace DesertLantern
 
         private string GuestServiceObjective()
         {
-            if (Service.WaitingRequest(true) != NoRoom)
+            if (Service.PhoneRinging)
                 return AtPhone(caretaker.Position) ? "E  ·  Answer the phone" : "The reception phone is ringing";
             if (GuestToServe(caretaker.Position) != NoRoom)
-                return Service.Towels > 0 ? "E  ·  Give the guest a towel" : "Order towels on the reception computer";
+                return $"E  ·  {Service.RequestLabel(GuestToServe(caretaker.Position))}";
             return VisitorAtDesk && (Service.KnownRequests & (1 << visitorRoom)) == 0
                 ? "A guest is waiting to ask for supplies" : null;
         }
 
-        private static MotelService soloService = MotelService.New();
         private MotelService lanService = MotelService.New();
 
         private MotelService Service
         {
-            get => lan == null ? soloService : lanService;
+            get => lan == null ? Campaign.Motel : lanService;
             set
             {
-                if (lan == null) soloService = value;
+                if (lan == null) Campaign.UpdateMotel(value);
                 else lanService = value;
             }
         }
@@ -237,7 +359,7 @@ namespace DesertLantern
             MotelWalker.Distance(position, MotelWorld.CarApproach(room)) < 1.45f;
 
         private static bool AtRack(int room, Vector3 position) =>
-            position.z > 6.8f && MotelWalker.Distance(position, MotelWorld.BagDrop(room)) < 1.35f;
+            MotelWorld.InteriorRoom(position) == room && MotelWalker.Distance(position, MotelWorld.BagDrop(room)) < 1.35f;
 
         private bool TryLuggage(ulong player, Vector3 position)
         {
@@ -250,7 +372,7 @@ namespace DesertLantern
             if (service.Bag == LuggageStatus.Carried && AtRack(service.BagRoom, position) && service.Deliver(player))
             {
                 Service = service;
-                nextGuestDelay = 1.12f;
+                nextGuestDelay = Mathf.Lerp(5.5f, 1.12f, service.Demand / 100f);
                 return true;
             }
             return false;
@@ -274,7 +396,7 @@ namespace DesertLantern
 
         private void ToggleDoor(int room, Vector3 position)
         {
-            if (room < 0 || room >= Guests.Length ||
+            if (room < 0 || room >= Guests.Length || !MotelWorld.NearFloor(position, MotelWorld.RoomDoor(room)) ||
                 MotelWalker.Distance(position, MotelWorld.RoomDoor(room)) > 1.5f)
                 return;
             MotelService service = Service;
@@ -299,15 +421,17 @@ namespace DesertLantern
             if (minutes == 0)
                 return;
             clockFraction -= minutes;
-            MotelService service = Service;
-            bool expiresAtDesk = guest != null && service.UpcomingReservation(Occupied) &&
-                service.ClockMinute + minutes >= service.BookingEnd(Occupied);
-            service.AdvanceClock(service.ClockMinute + minutes);
-            service.ExpireBooking(1);
-            service.ExpireBooking(2);
+            MotelService previous = Service;
+            MotelService service = previous;
+            service.AdvanceClock(service.ClockMinute + minutes, lan == null);
             service.AdvanceDelivery();
+            if (lan != null && previous.ClockMinute / 30 != service.ClockMinute / 30)
+                service.WorkMotelShift(false);
             Service = service;
-            if (expiresAtDesk)
+            if (lan == null)
+                Campaign.Advance(service.ClockMinute, service.Property, previous);
+            service = Service;
+            if (guest != null && (!service.ArrivalReady(Occupied) || service.BookingStart(Occupied) != guestArrivalMinute))
             {
                 guest.Dispose();
                 guest = null;
@@ -341,7 +465,8 @@ namespace DesertLantern
         private void HandleReception(ulong worker, Vector3 position, System.Collections.Generic.Queue<Vector3> route)
         {
             bool talkingToVisitor = VisitorAtDesk && MotelWalker.Distance(position, ServiceQueue) < 1.30f;
-            if (!AtOfficePosition(position) && !talkingToVisitor)
+            bool handingKey = GuestWaiting && MotelWalker.Distance(position, guest.Position) < 1.4f;
+            if (!AtOfficePosition(position) && !talkingToVisitor && !handingKey)
                 return;
             MotelService service = Service;
             if (talkingToVisitor && (service.KnownRequests & (1 << visitorRoom)) == 0)
@@ -353,11 +478,18 @@ namespace DesertLantern
             int checkout = service.CheckoutWaiting();
             if (checkout != NoRoom)
             {
-                service.CompleteCheckout(checkout, true);
+                if (service.OutstandingIssue(checkout) == GuestIssue.LateDeparture)
+                    service.ResolveGuestIssue(checkout, GuestIssue.LateDeparture);
+                else
+                    service.CompleteCheckout(checkout, true);
                 Service = service;
             }
-            else if (GuestWaiting)
+            else if (handingKey && selectedKeys.TryGetValue(worker, out int key) && key == Occupied &&
+                service.ArrivalReady(key) && service.Bag == LuggageStatus.None)
+            {
+                selectedKeys.Remove(worker);
                 StartEscort(worker, position, route);
+            }
         }
 
         private static bool AtDeliveryBay(Vector3 position) =>
@@ -366,9 +498,11 @@ namespace DesertLantern
         private static bool AtSupplyStorage(Vector3 position) =>
             InsideOffice(position) && MotelWalker.Distance(position, MotelWorld.SupplyStorage) < 1.10f;
 
-        private void HandleSupplyDelivery(ulong worker, Vector3 position)
+        private void HandleSupplyDelivery(ulong worker, Vector3 position, PropertyDelivery delivery)
         {
             MotelService service = Service;
+            if (!service.OwnsDelivery(delivery))
+                return;
             if (AtDeliveryBay(position))
                 service.CollectSupply(worker);
             else if (AtSupplyStorage(position))
@@ -386,9 +520,9 @@ namespace DesertLantern
             if (!pickup && !store)
                 return false;
             if (lan != null && !lan.IsHost)
-                lan.State?.ActionRpc(SupplyDeliveryAction, Vector3.zero);
+                lan.State?.ActionRpc(SupplyDeliveryAction, new Vector3((int)service.Property, service.ActiveOrderNumber, (int)DeliveryDock.SupplyBay));
             else
-                HandleSupplyDelivery(LocalWorker, caretaker.Position);
+                HandleSupplyDelivery(LocalWorker, caretaker.Position, service.DeliveryReference);
             return true;
         }
 
@@ -398,12 +532,21 @@ namespace DesertLantern
         private void UpdateServicePresentation(float delta)
         {
             MotelService service = Service;
+            world.ShowExpansion(service);
+            world.ShowGuestCars(service, vehicleArriving || guest != null ? Occupied : NoRoom,
+                vehicleArriving ? arrivalCarProgress : 1);
             world.AnimateService(service, service.Bag == LuggageStatus.Carried ? FindCarrier(service.Carrier) : null, delta);
             UpdateVisibleGuests(delta);
             if (caretaker != null)
-                world.ShowDeskPhone(service.WaitingRequest(true) != NoRoom);
+                world.ShowDeskPhone(service.PhoneRinging);
+            world.ShowReceptionChecklist(CountArrivals(service), CountDepartures(service), CountRequests(service), service.PendingOrderCount);
+            bool hasKey = GuestWaiting && selectedKeys.ContainsKey(LocalWorker);
+            int missingKeys = service.UnlockedDoors | (escorting ? 1 << Occupied : 0) | ~((1 << service.RoomCapacity) - 1);
+            if (hasKey)
+                missingKeys |= 1 << selectedKeys[LocalWorker];
+            world.ShowReceptionKeys(missingKeys, hasKey ? caretaker : null);
             world.ShowPurchasedServices(service);
-            world.ShowHousekeeping(service);
+            world.ShowHousekeeping(service, service.CartInUse ? FindCarrier(service.CartCarrier) : null);
             world.ShowCleaningTool(heldCleaningTool, caretaker, Time.unscaledTime < cleaningToolUntil);
             world.ShowSupplyDelivery(service, service.Delivery == SupplyDelivery.Carried
                 ? FindCarrier(service.SupplyCarrier) : null);
