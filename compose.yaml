@@ -2,4 +2,4 @@ services:
   game:
     build: .
     ports:
-      - "127.0.0.1:${MOTEL_PORT:-8080}:80"
+      - "${MOTEL_BIND:-127.0.0.1}:${MOTEL_PORT:-8080}:80"

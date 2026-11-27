@@ -9,8 +9,14 @@ This Unity 6 prototype starts over a 3D view of the county. Select
 - Visit the **Front Office**, which you can walk inside. Press **E** at the
   entrance or use the office marker to check in the waiting guest. Walk to
   the highlighted door and give your guest time to follow.
-- Inspect a nearby door with **E** between escorts. **Menu** or **Escape**
-  opens the display settings. **Back to map** returns to the county view.
+- Start with **$230**. Guiding a guest to their room adds **$65** once.
+  Follow the luggage prompt to the guest's car, pick up the case with **E**
+  and set it down inside the assigned room for a **$10** tip.
+- At the reception counter, press **E** or click the computer to buy cleaning
+  kits, towels, or linen sets. Purchases deduct cash and add stock immediately.
+- Open or close a nearby room door with **E**. Press **I** near it to check
+  occupancy. **Menu** or **Escape** opens the display settings.
+  **Back to map** returns to the county view.
 
 1. Add this folder from disk in Unity Hub and open it with Unity 6 (6000.0).
    On Windows, use the equivalent WSL folder shown by running
@@ -24,11 +30,17 @@ The buildings, terrain, and characters are 3D. The caretaker is a new
 skinned model based on the original concept in `Assets/Art/Caretaker.png`.
 The caretaker and guest FBX assets use the CC0 MakeHuman anatomy assets and
 were exported with Ara 3D Gen. Unity blends idle, walk, and run clips on
-their skeletons while a capsule controller handles collisions. Room
-interiors are the next planned milestone.
+their skeletons while a capsule controller handles collisions. The two-story
+wing, porch, reception, four furnished ground-floor rooms, and cars are built
+from Unity geometry and procedural materials. The upper floor is exterior
+scenery. The reference photos were used for design only.
 
 [MakeHuman asset license](https://github.com/makehumancommunity/makehuman/blob/master/LICENSE.md)
 and [Ara 3D Gen exporter](https://github.com/TuriaArt/3d-gen-TU).
+
+Design references for walkable rooms and hands-on guest service
+[Motel Manager Simulator](https://store.steampowered.com/app/2594540/Motel_Manager_Simulator/)
+and [Hotel Renovator](https://www.focus-entmt.com/en/games/hotel-renovator).
 
 ## Run a Unity Web build on localhost
 
@@ -46,6 +58,8 @@ To build from a terminal with an activated Editor, run the following from this f
 Unity -batchmode -nographics -quit -projectPath "$PWD" -buildTarget WebGL \
   -executeMethod DesertLantern.Editor.LocalWebBuild.Build -logFile -
 ```
+
+For browser co-op setup, see [Join from a browser](NETWORKING.md#join-from-a-browser).
 
 See [Unity’s web deployment guide](https://docs.unity3d.com/6000.0/Documentation/Manual/webgl-deploying.html)
 for details on build compression and server headers.

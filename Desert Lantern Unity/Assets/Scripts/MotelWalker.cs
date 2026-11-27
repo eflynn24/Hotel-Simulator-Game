@@ -12,6 +12,7 @@ namespace DesertLantern
         public const float RunSpeed = 4.25f;
         private const float Acceleration = 9f;
         private readonly Transform root;
+        private readonly Transform rightHand;
         private readonly AnimationMixerPlayable mixer;
         private readonly AnimationClipPlayable walk;
         private readonly AnimationClipPlayable run;
@@ -20,6 +21,16 @@ namespace DesertLantern
         private float fallSpeed;
 
         public Vector3 Position => root.position;
+        public Quaternion Orientation => root.rotation;
+        public Vector3 CarryPosition => rightHand != null
+            ? rightHand.position + Vector3.down * .18f
+            : root.TransformPoint(.39f, .68f, .15f);
+        public LanPose Pose => new LanPose
+        {
+            Position = root.position,
+            Rotation = root.rotation,
+            Speed = velocity.magnitude
+        };
         public CharacterController Capsule { get; }
 
         public MotelWalker(Transform parent, string asset, Vector3 position)
@@ -41,6 +52,13 @@ namespace DesertLantern
             GameObject model = Object.Instantiate(prefab, root);
             model.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
             model.transform.localScale = Vector3.one;
+            foreach (Transform bone in model.GetComponentsInChildren<Transform>())
+            {
+                if (!bone.name.EndsWith("RightHand", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                rightHand = bone;
+                break;
+            }
             Animator animator = model.GetComponent<Animator>();
             if (animator == null)
                 animator = model.AddComponent<Animator>();
@@ -87,7 +105,7 @@ namespace DesertLantern
             Vector3 motion = velocity * delta;
             Vector3 goal = start + motion;
             goal.x = Mathf.Clamp(goal.x, -16.5f, 16.5f);
-            goal.z = Mathf.Clamp(goal.z, -13.5f, 9.8f);
+            goal.z = Mathf.Clamp(goal.z, -13.5f, 13.35f);
             motion = goal - start;
             motion.y = fallSpeed * delta;
             Capsule.Move(motion);
@@ -102,6 +120,27 @@ namespace DesertLantern
                 root.rotation = Quaternion.RotateTowards(root.rotation, heading, 650f * delta);
             }
 
+            Animate(speed);
+        }
+
+        public void ApplyReplica(LanPose pose, float delta)
+        {
+            if (Capsule.enabled)
+            {
+                Capsule.enabled = false;
+                root.SetPositionAndRotation(pose.Position, pose.Rotation);
+                Animate(pose.Speed);
+                return;
+            }
+
+            float blend = 1 - Mathf.Exp(-19f * delta);
+            root.position = Vector3.Lerp(root.position, pose.Position, blend);
+            root.rotation = Quaternion.Slerp(root.rotation, pose.Rotation, blend);
+            Animate(pose.Speed);
+        }
+
+        private void Animate(float speed)
+        {
             float moving = Mathf.Clamp01(speed / WalkSpeed);
             float sprint = Mathf.InverseLerp(WalkSpeed, RunSpeed, speed);
             mixer.SetInputWeight(0, 1 - moving);

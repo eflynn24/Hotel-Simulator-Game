@@ -3,6 +3,7 @@ Shader "Desert Lantern/Weathered Surface"
     Properties
     {
         _Color ("Color", Color) = (1,1,1,1)
+        _EmissionColor ("Emission", Color) = (0,0,0,0)
         _Wear ("Wear", Range(0,1)) = .35
         _Grain ("Grain size", Float) = 5
     }
@@ -13,6 +14,7 @@ Shader "Desert Lantern/Weathered Surface"
         #pragma surface surf Standard fullforwardshadows
         #pragma target 3.0
         fixed4 _Color;
+        fixed4 _EmissionColor;
         half _Wear;
         half _Grain;
         struct Input { float3 worldPos; };
@@ -33,6 +35,7 @@ Shader "Desert Lantern/Weathered Surface"
             float3 p = IN.worldPos * _Grain;
             float weather = .65*noise(p*.16) + .25*noise(p) + .1*noise(p*9);
             o.Albedo = _Color.rgb * lerp(1, .58 + weather*.58, _Wear);
+            o.Emission = _EmissionColor.rgb;
             o.Metallic = 0;
             o.Smoothness = .1;
             o.Alpha = 1;

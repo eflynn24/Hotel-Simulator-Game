@@ -23,3 +23,43 @@ Open [Desert Lantern Unity](Desert%20Lantern%20Unity/README.md) in Unity 6.
 The first Unity milestone ports the county map and the motel exterior as two
 playable scenes. Build the front desk and port the management loop after
 the exterior navigation is tested in the editor.
+
+## Multiplayer and management roadmap
+
+Implement and verify one milestone at a time. The current milestone is
+LAN co-op from the County Map. Desktop hosts can accept browser players over
+WebSocket when the Web build is served over local HTTP.
+
+1. **LAN co-op** — Host or join a motel by local address, move together, and
+   share the existing office, guest escorts, and room occupancy. Verify joins,
+   late joins, and disconnects before expanding the simulation.
+2. **Reception and reservations** — Start with stays, check-in and checkout,
+   room assignments, and keys. Add nightly rates and security deposits,
+   reservations, luggage pickup from cars, then cancellations, refunds, and
+   overbooking. Start with in-game online bookings before choosing any
+   external service.
+3. **Housekeeping** — Make beds and change linens, vacuum and mop floors,
+   disinfect surfaces, clean bathrooms and toilets, collect garbage and
+   forgotten belongings, and wash, dry, and fold laundry.
+4. **Maintenance and repairs** — Fix plumbing and clogged toilets, electrical
+   systems and lighting, air conditioners and televisions. Address water
+   damage and mold, and replace equipment that cannot be repaired.
+5. **Inventory and supplies** — Track towels, bedding, cleaning supplies, and
+   toiletries. Compare supplier price and quality, place orders, receive and
+   unload deliveries, and stock vending machines.
+6. **Finances** — Add money and an accounting ledger. Pay utilities, internet,
+   employee wages, insurance, and operating expenses. Add loans, demand-based
+   pricing, and reinvestment in expansion.
+7. **Day and night** — Add a shared clock and vary customers and incidents at
+   night.
+8. **Food service** — Add breakfast, room service, bars, and restaurants.
+9. **Guest requests** — Add requests for towels, pillows, repairs, and special
+   services.
+
+### Current service prototype
+
+The current build adds a shared cash balance, a nightly charge, and the
+first luggage run. Each guest parks in an assigned bay; after escorting
+them to a room, collect their suitcase from that car and carry it to the
+room's rack. The prototype tracks these transactions for the current
+play session. The four ground-floor rooms and the reception are walkable.
