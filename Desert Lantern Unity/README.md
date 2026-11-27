@@ -39,6 +39,16 @@ This Unity 6 prototype starts over a 3D view of the county. Select
   occupancy. **Menu** or **Escape** opens the display settings.
   **Back to map** returns to the county view.
 
+- After checkout, the room is marked **dirty** and skips the arrival queue.
+  Open the room and use the housekeeping list or press **E** beside a task.
+  Bag trash before vacuuming, wipe the tabletop with a cleaning kit, strip
+  both beds, then remake them with two clean linen sets.
+- Order trash bags, a reusable vacuum, cleaning kits, detergent, and linens
+  from **Supplies**. Start a wash at the reception laundry station with
+  **E**. It uses one detergent and returns up to four used linens and
+  towels to clean stock after 90 motel minutes.
+
+
 1. Add this folder from disk in Unity Hub and open it with Unity 6 (6000.0).
    On Windows, use the equivalent WSL folder shown by running
    `wslpath -w "$PWD"` from this directory.

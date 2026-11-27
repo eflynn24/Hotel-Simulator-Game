@@ -209,7 +209,7 @@ namespace DesertLantern
             if (arrival == NoRoom)
                 return;
             Occupied = arrival;
-            guestArrivalMinute = Service.HasReservation(arrival) ? Service.BookingStart(arrival) : Service.ClockMinute;
+            guestArrivalMinute = Service.UpcomingReservation(arrival) ? Service.BookingStart(arrival) : Service.ClockMinute;
             guest = new MotelWalker(transform, CurrentGuestModel, MotelWorld.GuestSpawn);
             if (caretaker != null)
                 Physics.IgnoreCollision(caretaker.Capsule, guest.Capsule);
@@ -290,7 +290,7 @@ namespace DesertLantern
 
         private void Interact()
         {
-            if (RequestSupplyDelivery() || RequestLuggage())
+            if (RequestHousekeeping() || RequestSupplyDelivery() || RequestLuggage())
                 return;
             if (Service.WaitingRequest(true) != NoRoom && AtPhone(caretaker.Position))
             {
@@ -576,6 +576,7 @@ namespace DesertLantern
             DrawLuggageMarker(scale);
             DrawSupplyDeliveryMarker(scale);
             DrawGuestServiceMarkers(scale);
+            DrawHousekeeping(screen, margin, scale);
             if (InsideOffice(caretaker.Position) &&
                 DrawWorldButton(MotelWorld.ComputerScreen, "Reception computer", 154 * scale, scale))
             {
@@ -586,10 +587,10 @@ namespace DesertLantern
             }
 
             int room = NearRoom();
-            string objective = GuestServiceObjective() ?? (AtComputer(caretaker.Position) ? "E  ·  Open the reception computer" : ServiceObjective()) ?? SupplyObjective() ?? (escorting
+            string objective = HousekeepingObjective() ?? GuestServiceObjective() ?? (AtComputer(caretaker.Position) ? "E  ·  Open the reception computer" : ServiceObjective()) ?? SupplyObjective() ?? (escorting
                 ? (room == Occupied ? "Wait at the door for your guest" : $"Escort your guest to Room {Occupied + 1}")
                 : AtOffice && Service.CheckoutWaiting() != NoRoom ? "E  ·  Check out the departing guest"
-                : AtOffice && GuestWaiting ? (Service.HasReservation(Occupied)
+                : AtOffice && GuestWaiting ? (Service.UpcomingReservation(Occupied)
                     ? "E  ·  Check in the online reservation"
                     : "E or click Front Office to check in your guest")
                 : room != NoRoom ? $"E  ·  Open or close Room {room + 1}"
@@ -604,7 +605,7 @@ namespace DesertLantern
                 $"Time x{Mathf.Max(1, (int)Service.ClockSpeed)}"))
                 CycleClockSpeed();
             DrawServiceAction(hud, scale);
-            if (!hud.Contains(Event.current.mousePosition))
+            if (!hud.Contains(Event.current.mousePosition) && !housekeepingPanel.Contains(Event.current.mousePosition))
                 HandleWorldClick();
         }
 

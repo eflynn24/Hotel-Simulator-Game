@@ -412,7 +412,10 @@ namespace DesertLantern
             for (int room = 0; room < bags.Length; room++)
             {
                 Rigidbody body = bags[room];
-                bool delivered = (service.DeliveredBags & (1 << room)) != 0;
+                int bit = 1 << room;
+                bool delivered = (service.DeliveredBags & service.ActiveRooms & bit) != 0;
+                if (!delivered)
+                    bagDropped[room] = false;
                 bool active = service.Bag != LuggageStatus.None && service.BagRoom == room;
                 body.gameObject.SetActive(delivered || active);
                 if (delivered)

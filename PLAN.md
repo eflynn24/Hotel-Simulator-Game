@@ -29,8 +29,9 @@ the exterior navigation is tested in the editor.
 Implement and verify one milestone at a time. The current milestone is
 night lighting, booked stays, visible shelf stock, a reception phone and
 towel requests, and the first employee. The bellhop handles luggage and
-the computer sells TV access and meals. Prioritize room servicing and
-returning vacated rooms to inventory next, then refunds and overbooking.
+the computer sells TV access and meals. Vacated rooms now require cleaning
+and fresh bedding before reuse, with supplies and a shared laundry cycle.
+Refunds and overbooking are still on the reception roadmap.
 Desktop hosts accept browser players over WebSocket, including from the
 local HTTP copy.
 
@@ -66,9 +67,9 @@ local HTTP copy.
    desk and ask for towels. Players answer the request and serve the guest.
 2. Expand guest routines and requests beyond towels. The computer lists the
    request and room, and players use existing stock or order a delivery.
-3. Let the guest check out after the request is resolved. Mark that room as
-   needing service, and require a player to service it before another
-   arrival can use it.
+3. Checkout marks the room dirty. Players clear trash, wipe, vacuum, and
+   replace bedding before another arrival can use it. The laundry station
+   washes used linens and towels.
 4. Verify the complete loop with two LAN players. One player can accept the
    request while another orders, unloads, delivers the item, or services
    the vacated room. Keep the host authoritative over request progress,

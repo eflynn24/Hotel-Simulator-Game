@@ -300,7 +300,7 @@ namespace DesertLantern
                 return;
             clockFraction -= minutes;
             MotelService service = Service;
-            bool expiresAtDesk = guest != null && service.HasReservation(Occupied) &&
+            bool expiresAtDesk = guest != null && service.UpcomingReservation(Occupied) &&
                 service.ClockMinute + minutes >= service.BookingEnd(Occupied);
             service.AdvanceClock(service.ClockMinute + minutes);
             service.ExpireBooking(1);
@@ -403,6 +403,8 @@ namespace DesertLantern
             if (caretaker != null)
                 world.ShowDeskPhone(service.WaitingRequest(true) != NoRoom);
             world.ShowPurchasedServices(service);
+            world.ShowHousekeeping(service);
+            world.ShowCleaningTool(heldCleaningTool, caretaker, Time.unscaledTime < cleaningToolUntil);
             world.ShowSupplyDelivery(service, service.Delivery == SupplyDelivery.Carried
                 ? FindCarrier(service.SupplyCarrier) : null);
         }

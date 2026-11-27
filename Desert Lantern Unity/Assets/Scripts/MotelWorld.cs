@@ -63,6 +63,7 @@ namespace DesertLantern
             if (!overview)
             {
                 BuildSupplyDelivery();
+                BuildLaundry();
                 BuildOutdoorLights();
                 BuildDeskPhone();
             }

@@ -76,6 +76,7 @@ namespace DesertLantern
 
             Bed(x, 8.20f);
             Bed(x, 11.34f);
+            BuildRoomMess(room);
             Box("Shared bedside cabinet", new Vector3(x - 2.00f, .38f, 9.76f),
                 new Vector3(.79f, .76f, .79f), oak, SolidLayer);
             Box("Bedside drawer", new Vector3(x - 1.59f, .55f, 9.76f), new Vector3(.050f, .22f, .68f), trim);

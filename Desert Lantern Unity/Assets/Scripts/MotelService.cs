@@ -22,7 +22,7 @@ namespace DesertLantern
         }
     }
 
-    internal struct MotelService : INetworkSerializable, IEquatable<MotelService>
+    internal partial struct MotelService : INetworkSerializable, IEquatable<MotelService>
     {
         public const int StartingCash = 230;
         public const int RoomRate = 65;
@@ -36,7 +36,10 @@ namespace DesertLantern
         {
             new SupplyOffer("Cleaning kit", 12, 1),
             new SupplyOffer("Towels", 18, 4),
-            new SupplyOffer("Linen sets", 26, 2)
+            new SupplyOffer("Linen sets", 26, 2),
+            new SupplyOffer("Trash bags", 8, 4),
+            new SupplyOffer("Vacuum", 45, 1),
+            new SupplyOffer("Detergent", 12, 4)
         };
         public int Cash;
         public int CleaningKits;
@@ -93,7 +96,7 @@ namespace DesertLantern
 
         public void AdjustSchedule(int room, bool end, int delta)
         {
-            if (room != 1 && room != 2 || (UnlockedDoors & (1 << room)) != 0 || ReservationCancelled(room))
+            if (room != 1 && room != 2 || (VisitedRooms & (1 << room)) != 0 || ReservationCancelled(room))
                 return;
             int start = BookingStart(room);
             int finish = BookingEnd(room);
@@ -132,8 +135,9 @@ namespace DesertLantern
         {
             int previous = ClockMinute;
             ClockMinute = now;
+            AdvanceLaundry();
             for (int room = 1; room <= 2; room++)
-                if (HasReservation(room) && previous < BookingStart(room) && BookingStart(room) <= now)
+                if (UpcomingReservation(room) && previous < BookingStart(room) && BookingStart(room) <= now)
                     ClockSpeed = 1;
             for (int room = 0; room < checkoutMinutes.Length; room++)
             {
@@ -159,7 +163,11 @@ namespace DesertLantern
         public void CompleteCheckout(int room, bool assisted)
         {
             int bit = 1 << room;
+            if ((ActiveRooms & bit) == 0)
+                return;
             ActiveRooms &= (byte)~bit;
+            ActiveReservations &= (byte)~bit;
+            MarkRoomDirty(room);
             OpenDoors &= (byte)~bit;
             Reviews |= (byte)bit;
             if (!assisted)
@@ -180,7 +188,7 @@ namespace DesertLantern
             {
                 if (!ArrivalReady(room))
                     continue;
-                bool reserved = HasReservation(room);
+                bool reserved = UpcomingReservation(room);
                 int when = reserved ? BookingStart(room) : ClockMinute;
                 if (when < earliest || (when == earliest && reserved && !selectedReservation))
                 {
@@ -193,8 +201,8 @@ namespace DesertLantern
         }
 
         public bool ArrivalReady(int room) =>
-            (UnlockedDoors & (1 << room)) == 0 &&
-            ((room != 1 && room != 2) || ReservationCancelled(room) || ClockMinute >= BookingStart(room));
+            (UnlockedDoors & (1 << room)) == 0 && !RoomDirty(room) &&
+            ((VisitedRooms & (1 << room)) != 0 || (room != 1 && room != 2) || ReservationCancelled(room) || ClockMinute >= BookingStart(room));
 
         public int WaitingRequest(bool phone)
         {
@@ -244,21 +252,33 @@ namespace DesertLantern
 
         public void ExpireBooking(int room)
         {
-            if ((UnlockedDoors & (1 << room)) == 0 && !ReservationCancelled(room) && ClockMinute >= BookingEnd(room))
+            if ((VisitedRooms & (1 << room)) == 0 && !ReservationCancelled(room) && ClockMinute >= BookingEnd(room))
                 UpdateReservation(room, false);
         }
 
         public bool CheckIn(int room, int arrivedAt, int deskMinute)
         {
             int bit = 1 << room;
-            if (Bag != LuggageStatus.None || (UnlockedDoors & bit) != 0)
+            if (Bag != LuggageStatus.None || !ArrivalReady(room))
                 return false;
+            bool reserved = UpcomingReservation(room);
+            if (reserved)
+                ActiveReservations |= (byte)bit;
+            VisitedRooms |= (byte)bit;
             UnlockedDoors |= (byte)bit;
             ActiveRooms |= (byte)bit;
+            Reviews &= (byte)~bit;
+            LateCheckIns &= (byte)~bit;
+            MissedCheckouts &= (byte)~bit;
+            DeliveredBags &= (byte)~bit;
+            KnownRequests &= (byte)~bit;
+            FulfilledRequests &= (byte)~bit;
+            TvPackages &= (byte)~bit;
+            MealOrders &= (byte)~bit;
             requestMinutes[room] = ClockMinute + 75;
             if (deskMinute - arrivedAt > 90)
                 LateCheckIns |= (byte)bit;
-            checkoutMinutes[room] = HasReservation(room) ? BookingEnd(room)
+            checkoutMinutes[room] = reserved ? BookingEnd(room)
                 : (ClockMinute / MinutesPerDay + 1) * MinutesPerDay + 11 * 60;
             OpenDoors |= (byte)bit;
             BagRoom = (byte)room;
@@ -269,12 +289,15 @@ namespace DesertLantern
 
         public bool HasReservation(int room) => (confirmedReservations & (1 << room)) != 0;
 
+        public bool UpcomingReservation(int room) =>
+            HasReservation(room) && (VisitedRooms & (1 << room)) == 0;
+
         public bool ReservationCancelled(int room) => (cancelledReservations & (1 << room)) != 0;
 
         public void UpdateReservation(int room, bool confirm)
         {
             int bit = 1 << room;
-            if ((UnlockedDoors & bit) != 0 || ReservationCancelled(room))
+            if ((VisitedRooms & bit) != 0 || ReservationCancelled(room))
                 return;
             if (confirm)
                 confirmedReservations |= (byte)bit;
@@ -314,11 +337,20 @@ namespace DesertLantern
             }
         }
 
-        public int Stock(int index) => index == 0 ? CleaningKits : index == 1 ? Towels : LinenSets;
+        public int Stock(int index) => index switch
+        {
+            0 => CleaningKits,
+            1 => Towels,
+            2 => LinenSets,
+            3 => TrashBags,
+            4 => Vacuums,
+            5 => Detergent,
+            _ => 0
+        };
 
         public bool Order(int index)
         {
-            if (Delivery != SupplyDelivery.None || index < 0 || index >= Catalog.Length)
+            if (Delivery != SupplyDelivery.None || index < 0 || index >= Catalog.Length || (index == 4 && Vacuums > 0))
                 return false;
             SupplyOffer offer = Catalog[index];
             if (Cash < offer.Price)
@@ -358,6 +390,9 @@ namespace DesertLantern
                 case 0: CleaningKits += offer.Quantity; break;
                 case 1: Towels += offer.Quantity; break;
                 case 2: LinenSets += offer.Quantity; break;
+                case 3: TrashBags += offer.Quantity; break;
+                case 4: Vacuums += offer.Quantity; break;
+                case 5: Detergent += offer.Quantity; break;
             }
 
             Delivery = SupplyDelivery.None;
@@ -426,6 +461,7 @@ namespace DesertLantern
             serializer.SerializeValue(ref OrderedOffer);
             serializer.SerializeValue(ref DeliveryDue);
             serializer.SerializeValue(ref SupplyCarrier);
+            SerializeHousekeeping(serializer);
         }
 
         public bool Equals(MotelService other) =>
@@ -438,6 +474,6 @@ namespace DesertLantern
             DeliveredBags == other.DeliveredBags && BagRoom == other.BagRoom &&
             confirmedReservations == other.confirmedReservations && cancelledReservations == other.cancelledReservations &&
             Carrier == other.Carrier && Bag == other.Bag && Delivery == other.Delivery &&
-            OrderedOffer == other.OrderedOffer && DeliveryDue.Equals(other.DeliveryDue) && SupplyCarrier == other.SupplyCarrier;
+            OrderedOffer == other.OrderedOffer && DeliveryDue.Equals(other.DeliveryDue) && SupplyCarrier == other.SupplyCarrier && HousekeepingEquals(other);
     }
 }

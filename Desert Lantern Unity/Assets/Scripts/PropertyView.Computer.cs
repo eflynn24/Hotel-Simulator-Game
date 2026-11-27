@@ -115,14 +115,14 @@ namespace DesertLantern
             for (int room = 1; room <= 2; room++)
             {
                 int bit = 1 << room;
-                bool checkedIn = (service.UnlockedDoors & bit) != 0;
+                bool checkedIn = (service.VisitedRooms & bit) != 0;
                 bool arrived = room == Occupied && guest != null;
                 bool reserved = service.HasReservation(room);
                 bool cancelled = service.ReservationCancelled(room);
                 if (booked != reserved || cancelled || (!booked && checkedIn))
                     continue;
                 float y = panel.y + (136 + rows++ * 121) * scale;
-                string status = checkedIn ? ((service.ActiveRooms & bit) != 0 ? "Checked in" : "Checked out")
+                string status = checkedIn ? ((service.ActiveReservations & bit) != 0 ? "Checked in" : "Checked out")
                     : arrived ? "At reception" : service.ClockMinute >= service.BookingStart(room) ? "Due now"
                     : reserved ? "Booked" : "Awaiting confirmation";
                 bool editable = !checkedIn && !arrived;
@@ -247,14 +247,15 @@ namespace DesertLantern
             for (int row = 0; row < MotelService.Catalog.Length; row++)
             {
                 SupplyOffer offer = MotelService.Catalog[row];
-                float y = panel.y + (150 + 58 * row) * scale;
+                float y = panel.y + (141 + 40 * row) * scale;
                 GUI.Label(new Rect(x, y, width - 91 * scale, 26 * scale),
                     $"{offer.Name} ×{offer.Quantity}", detail);
-                GUI.Label(new Rect(x, y + 24 * scale, width - 91 * scale, 25 * scale),
-                    $"{Service.Stock(row)} in stock", label);
-                GUI.enabled = service.Delivery == SupplyDelivery.None && service.Cash >= offer.Price;
-                if (DrawButton(new Rect(panel.xMax - 128 * scale, y + 5 * scale, 110 * scale, 34 * scale),
-                    $"Order  ${offer.Price}"))
+                GUI.Label(new Rect(x, y + 20 * scale, width - 116 * scale, 21 * scale),
+                    $"{service.Stock(row)} in stock", label);
+                GUI.enabled = service.Delivery == SupplyDelivery.None && service.Cash >= offer.Price &&
+                    (row != 4 || service.Vacuums == 0);
+                if (DrawButton(new Rect(panel.xMax - 128 * scale, y + 5 * scale, 110 * scale, 29 * scale),
+                    row == 4 && service.Vacuums > 0 ? "Owned" : $"Order  ${offer.Price}"))
                     Purchase(row);
                 GUI.enabled = true;
             }

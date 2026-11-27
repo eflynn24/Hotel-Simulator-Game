@@ -282,6 +282,12 @@ namespace DesertLantern
             else if (action == SellUpgradeAction && position.x >= 0 && position.x < 2 * Guests.Length &&
                 position.x == Mathf.Floor(position.x))
                 HandleGuestAction(action, (int)position.x, peer.Walker.Position);
+            else if (action == CleanRoomAction && position.x >= 0 && position.x < Guests.Length &&
+                position.y >= 0 && position.y < MotelService.CleaningTaskCount &&
+                position.x == Mathf.Floor(position.x) && position.y == Mathf.Floor(position.y))
+                HandleCleaning((int)position.x, (CleaningTask)(int)position.y, peer.Walker.Position);
+            else if (action == LaundryAction)
+                HandleLaundry(peer.Walker.Position);
             else if (action == SupplyDeliveryAction)
                 HandleSupplyDelivery(id, peer.Walker.Position);
             else if (action == PurchaseAction && Finite(position.x) &&
