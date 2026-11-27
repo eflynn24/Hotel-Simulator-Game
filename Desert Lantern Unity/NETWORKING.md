@@ -26,20 +26,25 @@ NAT mode.
 
 ## Join from GitHub Pages
 
-1. On the same network, start a desktop or headless host with browser support
-   as described below. GitHub Pages serves the game files while your host
-   runs the motel session.
-2. Open the [GitHub Pages game](https://eflynn24.github.io/Hotel-Simulator/)
-   and choose **County Map → LAN co-op**.
-3. In current Chrome, enter the host's private IPv4 address and TCP port
-   (default `7778`) with **Secure WebSocket (WSS)** unchecked. Use
-   `127.0.0.1` when the browser and host are on the same machine. Allow local
-   network access when asked. If you previously denied it, change the site's
-   permission in your browser settings and try again.
-4. For browsers that require an encrypted connection from HTTPS, use
-   **Secure WebSocket (WSS)**. Enter the host's DNS name without a scheme or
-   path and the TLS proxy port (default `443`). The browser must trust its
-   certificate. Local network permission can still be required.
+On the motel's Wi-Fi network, open the
+[GitHub Pages game](https://eflynn24.github.io/Hotel-Simulator/) in current
+Chrome and click **Join LAN**. The published build uses the configured
+Windows Wi-Fi address and TCP port `7778`. The headless host starts when
+its Windows user signs in and occupies one of the four slots. Allow local
+network access if Chrome asks. If you previously denied it, change the
+site's permission in your browser settings and try again.
+
+The published address is `PublishedLanAddress` in
+`Assets/Scripts/PropertyView.Lan.cs`. If Windows gets a different Wi-Fi
+address, update that setting and republish the Web build, or use
+**LAN settings** to enter the current address. A router DHCP reservation
+can keep the address stable.
+
+For a different host, use **LAN settings** and enter its private IPv4
+address and TCP port. For browsers that require an encrypted connection
+from HTTPS, enable **Secure WebSocket (WSS)** and enter the host's DNS
+name and TLS proxy port (default `443`). The browser must trust the
+certificate. Local network permission can still be required.
 
 For WSS, use a DNS name that points to the proxy on your LAN and a TLS
 certificate for that name. The proxy must forward WebSocket upgrades at

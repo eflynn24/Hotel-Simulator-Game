@@ -469,8 +469,17 @@ namespace DesertLantern
             GUI.Label(new Rect(header.x + 12 * scale, header.y + 5 * scale, header.width, 54 * scale), "County Map", title);
             GUI.Label(new Rect(header.x + 12 * scale, header.y + 58 * scale, header.width, 28 * scale), "Select the motel to visit the property.", detail);
 
-            if (DrawButton(new Rect(margin, margin, 121 * scale, 44 * scale), "LAN co-op"))
+            if (publishedLan)
+            {
+                if (DrawButton(new Rect(margin, margin, 121 * scale, 44 * scale), "Join LAN"))
+                    JoinPublishedLan();
+                if (DrawButton(new Rect(margin + 129 * scale, margin, 188 * scale, 44 * scale), "LAN settings"))
+                    lanMenu = true;
+            }
+            else if (DrawButton(new Rect(margin, margin, 121 * scale, 44 * scale), "LAN co-op"))
+            {
                 lanMenu = true;
+            }
             if (DrawWorldButton(new Vector3(1.6f, 6, -1), "Desert Lantern Motel", 226 * scale, scale))
                 SceneManager.LoadScene("MotelExterior");
         }

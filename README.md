@@ -39,19 +39,14 @@ On Windows, use `py -3` in place of `python3` if needed.
 
 ## LAN co-op
 
-Start a desktop host from **County Map → LAN co-op** with
-**Allow browser players (WebSocket)** enabled. Open the
-[GitHub Pages game](https://eflynn24.github.io/Hotel-Simulator/), choose
-**County Map → LAN co-op**, enter the host's LAN IPv4 address and TCP port
-(default `7778`), then select **Join motel**. Grant the site local network
-access if prompted. This direct connection requires a browser that allows
-private IPv4 WebSocket connections from HTTPS, such as current Chrome.
-On the host machine, use `127.0.0.1`.
+On the motel's LAN, open the [GitHub Pages game](https://eflynn24.github.io/Hotel-Simulator/)
+in current Chrome and click **Join LAN** on the County Map. The published build
+is configured for the Windows host on that network. Allow local network access
+if Chrome asks. The host starts at Windows sign-in and must be online.
 
-The game also supports a secure WebSocket endpoint for HTTPS browser play.
-See the [LAN guide](Desert%20Lantern%20Unity/NETWORKING.md#join-from-github-pages)
-for secure host setup and the local HTTP option. Desktop-only sessions use
-UDP port `7777`.
+Choose **LAN settings** to connect to a different host or use a secure
+WebSocket. See the [LAN guide](Desert%20Lantern%20Unity/NETWORKING.md#join-from-github-pages)
+for manual hosting and the local HTTP option. Desktop-only sessions use UDP port `7777`.
 
 ## Open or rebuild in Unity
 
