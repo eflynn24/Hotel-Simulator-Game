@@ -60,6 +60,8 @@ namespace DesertLantern
             BuildDesert();
             BuildPlanting();
             BuildParking(overview);
+            if (!overview)
+                BuildSupplyDelivery();
         }
 
         private void BuildDesert()

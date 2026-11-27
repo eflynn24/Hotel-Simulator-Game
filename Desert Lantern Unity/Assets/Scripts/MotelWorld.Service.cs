@@ -12,6 +12,51 @@ namespace DesertLantern
         private readonly Rigidbody[] bags = new Rigidbody[4];
         private readonly bool[] bagDropped = new bool[4];
         private readonly Transform[] trunks = new Transform[4];
+        public static readonly Vector3 DeliveryBay = new Vector3(-13.80f, 0, 1.20f);
+        public static readonly Vector3 SupplyStorage = new Vector3(-13.65f, 0, 6.45f);
+        private static readonly Vector3 CrateAtBay = new Vector3(-13.80f, .55f, 2.03f);
+        private Transform supplyCrate;
+        private BoxCollider supplyCollider;
+
+        private void BuildSupplyDelivery()
+        {
+            Material carton = Surface(new Color32(170, 121, 71, 255), .75f, 14);
+            Box("Delivery bay marking", new Vector3(-13.80f, .018f, 1.95f),
+                new Vector3(2.65f, .026f, 2.40f), cream);
+            Box("Delivery pallet", new Vector3(-13.80f, .16f, 2.03f),
+                new Vector3(1.45f, .29f, .98f), oak, SolidLayer);
+            Sign("DELIVERIES", new Vector3(-13.80f, .31f, 1.51f), .15f, Color.white);
+            Box("Supply storage back", new Vector3(-14.46f, .92f, 6.46f),
+                new Vector3(.16f, 1.84f, 1.48f), iron, SolidLayer);
+            for (int level = 0; level < 3; level++)
+                Box("Supply shelf", new Vector3(-14.19f, .25f + level * .66f, 6.46f),
+                    new Vector3(.65f, .095f, 1.50f), oak, SolidLayer);
+            Box("Storage sign board", new Vector3(-14.20f, 1.90f, 5.72f),
+                new Vector3(1.10f, .25f, .08f), dark);
+            Sign("SUPPLIES", new Vector3(-14.20f, 1.90f, 5.67f), .17f, Color.white);
+            supplyCrate = Node("Supply crate", CrateAtBay);
+            Piece(supplyCrate, "Cardboard parcel", Vector3.zero, new Vector3(.68f, .49f, .48f), carton);
+            Piece(supplyCrate, "Packing tape", new Vector3(0, .247f, 0),
+                new Vector3(.078f, .009f, .484f), cream);
+            Piece(supplyCrate, "Shipping label", new Vector3(.15f, .248f, -.07f),
+                new Vector3(.18f, .010f, .13f), linen);
+            supplyCollider = supplyCrate.gameObject.AddComponent<BoxCollider>();
+            supplyCollider.size = new Vector3(.68f, .49f, .48f);
+            supplyCrate.gameObject.SetActive(false);
+        }
+
+        public void ShowSupplyDelivery(MotelService service, MotelWalker carrier)
+        {
+            bool onPallet = service.Delivery == SupplyDelivery.AtBay;
+            bool visible = onPallet || carrier != null;
+            supplyCrate.gameObject.SetActive(visible);
+            if (!visible)
+                return;
+            supplyCollider.enabled = onPallet;
+            supplyCrate.SetPositionAndRotation(onPallet ? CrateAtBay : carrier.CarryPosition,
+                onPallet ? Quaternion.identity : carrier.Orientation);
+        }
+
         private Material rubber, chrome, bark, shrub;
 
         private void BuildRoadsideFeatures()

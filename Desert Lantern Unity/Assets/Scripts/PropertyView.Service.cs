@@ -6,6 +6,7 @@ namespace DesertLantern
     {
         private const byte LuggageAction = 2;
         private const byte DoorAction = 3;
+        private const byte SupplyDeliveryAction = 7;
         private static MotelService soloService = MotelService.New();
         private MotelService lanService = MotelService.New();
 
@@ -80,18 +81,83 @@ namespace DesertLantern
                 ToggleDoor(room, caretaker.Position);
         }
 
+        private void AdvanceSupplyDelivery()
+        {
+            MotelService service = Service;
+            if (service.Delivery != SupplyDelivery.InTransit)
+                return;
+            service.AdvanceDelivery(Time.unscaledTime);
+            Service = service;
+        }
+
+        private static bool AtDeliveryBay(Vector3 position) =>
+            MotelWalker.Distance(position, MotelWorld.DeliveryBay) < 1.25f;
+
+        private static bool AtSupplyStorage(Vector3 position) =>
+            MotelWalker.Distance(position, MotelWorld.SupplyStorage) < 1.25f;
+
+        private void HandleSupplyDelivery(ulong worker, Vector3 position)
+        {
+            MotelService service = Service;
+            if (AtDeliveryBay(position))
+                service.CollectSupply(worker);
+            else if (AtSupplyStorage(position))
+                service.StoreSupply(worker);
+            Service = service;
+        }
+
+        private bool RequestSupplyDelivery()
+        {
+            MotelService service = Service;
+            bool pickup = service.Delivery == SupplyDelivery.AtBay && AtDeliveryBay(caretaker.Position) &&
+                (service.Bag != LuggageStatus.Carried || service.Carrier != LocalWorker);
+            bool store = service.Delivery == SupplyDelivery.Carried && service.SupplyCarrier == LocalWorker &&
+                AtSupplyStorage(caretaker.Position);
+            if (!pickup && !store)
+                return false;
+            if (lan != null && !lan.IsHost)
+                lan.State?.ActionRpc(SupplyDeliveryAction, Vector3.zero);
+            else
+                HandleSupplyDelivery(LocalWorker, caretaker.Position);
+            return true;
+        }
+
+        private MotelWalker FindCarrier(ulong worker) => worker == LocalWorker ? caretaker :
+            peers.TryGetValue(worker, out Peer peer) ? peer.Walker : null;
+
         private void UpdateServicePresentation(float delta)
         {
             MotelService service = Service;
-            MotelWalker carrier = null;
-            if (service.Bag == LuggageStatus.Carried)
+            world.AnimateService(service, service.Bag == LuggageStatus.Carried ? FindCarrier(service.Carrier) : null, delta);
+            world.ShowSupplyDelivery(service, service.Delivery == SupplyDelivery.Carried
+                ? FindCarrier(service.SupplyCarrier) : null);
+        }
+
+        private string SupplyObjective()
+        {
+            MotelService service = Service;
+            return service.Delivery switch
             {
-                if (service.Carrier == LocalWorker)
-                    carrier = caretaker;
-                else if (peers.TryGetValue(service.Carrier, out Peer peer))
-                    carrier = peer.Walker;
-            }
-            world.AnimateService(service, carrier, delta);
+                SupplyDelivery.AtBay => AtDeliveryBay(caretaker.Position)
+                    ? "E  ·  Pick up the supply crate" : "Pick up the order at the delivery bay",
+                SupplyDelivery.Carried when service.SupplyCarrier == LocalWorker => AtSupplyStorage(caretaker.Position)
+                    ? "E  ·  Store the supplies" : "Carry the crate to supply storage",
+                _ => null
+            };
+        }
+
+        private void DrawSupplyDeliveryMarker(float scale)
+        {
+            MotelService service = Service;
+            bool pickup = service.Delivery == SupplyDelivery.AtBay;
+            bool store = service.Delivery == SupplyDelivery.Carried && service.SupplyCarrier == LocalWorker;
+            if (!pickup && !store)
+                return;
+            Vector3 destination = pickup ? MotelWorld.DeliveryBay : MotelWorld.SupplyStorage;
+            string caption = pickup ? "Collect supply crate" : "Store supply crate";
+            if (DrawWorldButton(destination + Vector3.up * 1.12f, caption, 170 * scale, scale) &&
+                !RequestSupplyDelivery())
+                SetDestination(destination);
         }
 
         private string ServiceObjective()
@@ -112,15 +178,32 @@ namespace DesertLantern
             MotelService service = Service;
             bool fetching = service.Bag == LuggageStatus.InCar;
             bool delivering = service.Bag == LuggageStatus.Carried && service.Carrier == LocalWorker;
-            if ((!fetching && !delivering) || hud.width < 440 * scale)
+            if (hud.width < 440 * scale)
                 return;
 
-            Vector3 target = fetching ? MotelWorld.CarApproach(service.BagRoom) : MotelWorld.BagDrop(service.BagRoom);
-            bool near = fetching ? AtTrunk(service.BagRoom, caretaker.Position) : AtRack(service.BagRoom, caretaker.Position);
-            string text = fetching ? (near ? "Pick up" : "Go to car") : (near ? "Set down" : "Go to room");
             Rect buttonRect = new Rect(hud.xMax - 115 * scale, hud.y + 3 * scale, 108 * scale, 26 * scale);
-            if (DrawButton(buttonRect, text) && !RequestLuggage())
-                SetDestination(target);
+            if (fetching || delivering)
+            {
+                Vector3 target = fetching ? MotelWorld.CarApproach(service.BagRoom) : MotelWorld.BagDrop(service.BagRoom);
+                bool near = fetching ? AtTrunk(service.BagRoom, caretaker.Position) : AtRack(service.BagRoom, caretaker.Position);
+                string text = fetching ? (near ? "Pick up" : "Go to car") : (near ? "Set down" : "Go to room");
+                if (DrawButton(buttonRect, text) && !RequestLuggage())
+                    SetDestination(target);
+                return;
+            }
+
+            if (service.Delivery == SupplyDelivery.AtBay)
+            {
+                if (DrawButton(buttonRect, AtDeliveryBay(caretaker.Position) ? "Pick up" : "Go to bay") &&
+                    !RequestSupplyDelivery())
+                    SetDestination(MotelWorld.DeliveryBay);
+            }
+            else if (service.Delivery == SupplyDelivery.Carried && service.SupplyCarrier == LocalWorker &&
+                DrawButton(buttonRect, AtSupplyStorage(caretaker.Position) ? "Store" : "Go to shelf") &&
+                !RequestSupplyDelivery())
+            {
+                SetDestination(MotelWorld.SupplyStorage);
+            }
         }
 
         private void DrawLuggageMarker(float scale)

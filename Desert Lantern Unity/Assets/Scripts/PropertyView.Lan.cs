@@ -156,6 +156,7 @@ namespace DesertLantern
                 }
                 MotelService service = Service;
                 service.RecoverBag(id);
+                service.RecoverSupply(id);
                 Service = service;
                 peers[id].Walker.Dispose();
                 peers.Remove(id);
@@ -266,6 +267,8 @@ namespace DesertLantern
                 StartEscort(id, peer.Walker.Position, peer.Route);
             else if (action == LuggageAction)
                 TryLuggage(id, peer.Walker.Position);
+            else if (action == SupplyDeliveryAction)
+                HandleSupplyDelivery(id, peer.Walker.Position);
             else if (action == PurchaseAction && Finite(position.x) &&
                 position.x >= 0 && position.x < MotelService.Catalog.Length)
                 TryPurchase((int)position.x, peer.Walker.Position);

@@ -14,8 +14,10 @@ This Unity 6 prototype starts over a 3D view of the county. Select
   and set it down inside the assigned room for a **$10** tip.
 - At the reception counter, press **E** or click the computer to open
   **Reservations** or **Supplies**. Confirm or close online requests before
-  guests arrive. Buy cleaning kits, towels, or linen sets from **Supplies**.
-  Purchases deduct cash and add stock immediately.
+  guests arrive. Order cleaning kits, towels, or linen from **Supplies**.
+  The order charges cash immediately. When the crate arrives, use **E**
+  at the delivery bay to pick it up and **E** at the supply shelf to add
+  it to stock. The computer accepts one outstanding order at a time.
 - Open or close a nearby room door with **E**. Press **I** near it to check
   occupancy. **Menu** or **Escape** opens the display settings.
   **Back to map** returns to the county view.

@@ -3,6 +3,8 @@ using Unity.Netcode;
 
 namespace DesertLantern
 {
+    internal enum SupplyDelivery : byte { None, InTransit, AtBay, Carried }
+
     internal enum LuggageStatus : byte { None, InCar, Carried }
 
     internal readonly struct SupplyOffer
@@ -34,6 +36,10 @@ namespace DesertLantern
         public int CleaningKits;
         public int Towels;
         public int LinenSets;
+        public SupplyDelivery Delivery;
+        public byte OrderedOffer;
+        public float DeliveryDue;
+        public ulong SupplyCarrier;
         public byte UnlockedDoors;
         public byte OpenDoors;
         public byte DeliveredBags;
@@ -78,7 +84,7 @@ namespace DesertLantern
 
         public bool PickUp(ulong player)
         {
-            if (Bag != LuggageStatus.InCar)
+            if (Bag != LuggageStatus.InCar || (Delivery == SupplyDelivery.Carried && SupplyCarrier == player))
                 return false;
             Carrier = player;
             Bag = LuggageStatus.Carried;
@@ -107,23 +113,59 @@ namespace DesertLantern
 
         public int Stock(int index) => index == 0 ? CleaningKits : index == 1 ? Towels : LinenSets;
 
-        public bool Buy(int index)
+        public bool Order(int index, float now)
         {
-            if (index < 0 || index >= Catalog.Length)
+            if (Delivery != SupplyDelivery.None || index < 0 || index >= Catalog.Length)
                 return false;
             SupplyOffer offer = Catalog[index];
             if (Cash < offer.Price)
                 return false;
 
             Cash -= offer.Price;
-            switch (index)
+            OrderedOffer = (byte)index;
+            Delivery = SupplyDelivery.InTransit;
+            DeliveryDue = now + 12f;
+            return true;
+        }
+
+        public void AdvanceDelivery(float now)
+        {
+            if (Delivery == SupplyDelivery.InTransit && now >= DeliveryDue)
+                Delivery = SupplyDelivery.AtBay;
+        }
+
+        public void CollectSupply(ulong worker)
+        {
+            if (Delivery != SupplyDelivery.AtBay || (Bag == LuggageStatus.Carried && Carrier == worker))
+                return;
+            SupplyCarrier = worker;
+            Delivery = SupplyDelivery.Carried;
+        }
+
+        public void StoreSupply(ulong worker)
+        {
+            if (Delivery != SupplyDelivery.Carried || SupplyCarrier != worker)
+                return;
+            SupplyOffer offer = Catalog[OrderedOffer];
+            switch (OrderedOffer)
             {
                 case 0: CleaningKits += offer.Quantity; break;
                 case 1: Towels += offer.Quantity; break;
                 case 2: LinenSets += offer.Quantity; break;
             }
 
-            return true;
+            Delivery = SupplyDelivery.None;
+            OrderedOffer = 0;
+            SupplyCarrier = 0;
+            DeliveryDue = 0;
+        }
+
+        public void RecoverSupply(ulong worker)
+        {
+            if (Delivery != SupplyDelivery.Carried || SupplyCarrier != worker)
+                return;
+            SupplyCarrier = 0;
+            Delivery = SupplyDelivery.AtBay;
         }
 
         public void ToggleDoor(int room) => OpenDoors ^= (byte)(1 << room);
@@ -142,6 +184,10 @@ namespace DesertLantern
             serializer.SerializeValue(ref cancelledReservations);
             serializer.SerializeValue(ref Carrier);
             serializer.SerializeValue(ref Bag);
+            serializer.SerializeValue(ref Delivery);
+            serializer.SerializeValue(ref OrderedOffer);
+            serializer.SerializeValue(ref DeliveryDue);
+            serializer.SerializeValue(ref SupplyCarrier);
         }
 
         public bool Equals(MotelService other) =>
@@ -149,6 +195,7 @@ namespace DesertLantern
             LinenSets == other.LinenSets && UnlockedDoors == other.UnlockedDoors && OpenDoors == other.OpenDoors &&
             DeliveredBags == other.DeliveredBags && BagRoom == other.BagRoom &&
             confirmedReservations == other.confirmedReservations && cancelledReservations == other.cancelledReservations &&
-            Carrier == other.Carrier && Bag == other.Bag;
+            Carrier == other.Carrier && Bag == other.Bag && Delivery == other.Delivery &&
+            OrderedOffer == other.OrderedOffer && DeliveryDue.Equals(other.DeliveryDue) && SupplyCarrier == other.SupplyCarrier;
     }
 }

@@ -27,10 +27,10 @@ the exterior navigation is tested in the editor.
 ## Multiplayer and management roadmap
 
 Implement and verify one milestone at a time. The current milestone is
-the shared Reservations tab in the reception computer. The first online
-requests can be confirmed or closed before arrival. The next milestones
-are physical supply delivery, a ringing reception phone for reservations,
-cancellations, refunds and overbooking, and a shared day/night cycle.
+physical supply delivery. Order at reception, pick up the crate at the
+delivery bay, and carry it to the supply shelf. Prioritize the guest stay
+and requests loop next. Continue with the reception phone for reservations,
+cancellations, refunds and overbooking, then a shared day/night cycle.
 Desktop hosts accept browser players over WebSocket, including from the
 local HTTP copy.
 
@@ -57,8 +57,24 @@ local HTTP copy.
 7. **Day and night** — Add a shared clock and vary customers and incidents at
    night.
 8. **Food service** — Add breakfast, room service, bars, and restaurants.
-9. **Guest requests** — Add requests for towels, pillows, repairs, and special
-   services.
+9. **Advanced guest requests** — Extend guest requests to meals, repairs,
+   and special services after the basic stay and room-turnover loop works.
+
+### Next playable milestone
+
+1. Keep checked-in guests present during their stay. Give them routines
+   between their rooms and reception, and let players talk to them at both.
+2. Start with a towel request. A guest can walk to reception and ask for it.
+   Show their request and room on the reception computer. Use existing stock
+   or order the item, collect the delivery, and hand the supplies to the
+   requesting guest.
+3. Let the guest check out after the request is resolved. Mark that room as
+   needing service, and require a player to service it before another
+   arrival can use it.
+4. Verify the complete loop with two LAN players. One player can accept the
+   request while another orders, unloads, delivers the item, or services
+   the vacated room. Keep the host authoritative over request progress,
+   inventory, and room availability.
 
 ### Current service prototype
 

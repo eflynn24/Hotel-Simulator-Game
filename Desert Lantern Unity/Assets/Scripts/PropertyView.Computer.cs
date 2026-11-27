@@ -24,7 +24,7 @@ namespace DesertLantern
         private void TryPurchase(int offer, Vector3 position)
         {
             MotelService service = Service;
-            if (AtComputer(position) && service.Buy(offer))
+            if (AtComputer(position) && service.Order(offer, Time.unscaledTime))
                 Service = service;
         }
 
@@ -107,7 +107,16 @@ namespace DesertLantern
 
         private void DrawSupplyRows(Rect panel, float x, float width, float scale)
         {
-            GUI.Label(new Rect(x, panel.y + 108 * scale, width, 31 * scale), $"Available cash  ${Service.Cash}", label);
+            MotelService service = Service;
+            string status = service.Delivery switch
+            {
+                SupplyDelivery.InTransit => "Order in transit",
+                SupplyDelivery.AtBay => "Order at the delivery bay",
+                SupplyDelivery.Carried => "Order being unloaded",
+                _ => "Ready to order"
+            };
+            GUI.Label(new Rect(x, panel.y + 108 * scale, width, 31 * scale),
+                $"Cash  ${service.Cash}   ·   {status}", label);
             for (int row = 0; row < MotelService.Catalog.Length; row++)
             {
                 SupplyOffer offer = MotelService.Catalog[row];
@@ -116,9 +125,9 @@ namespace DesertLantern
                     $"{offer.Name} ×{offer.Quantity}", detail);
                 GUI.Label(new Rect(x, y + 24 * scale, width - 91 * scale, 25 * scale),
                     $"{Service.Stock(row)} in stock", label);
-                GUI.enabled = Service.Cash >= offer.Price;
-                if (DrawButton(new Rect(panel.xMax - 101 * scale, y + 5 * scale, 83 * scale, 34 * scale),
-                    $"Buy  ${offer.Price}"))
+                GUI.enabled = service.Delivery == SupplyDelivery.None && service.Cash >= offer.Price;
+                if (DrawButton(new Rect(panel.xMax - 128 * scale, y + 5 * scale, 110 * scale, 34 * scale),
+                    $"Order  ${offer.Price}"))
                     Purchase(row);
                 GUI.enabled = true;
             }

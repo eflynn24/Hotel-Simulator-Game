@@ -128,6 +128,8 @@ namespace DesertLantern
             {
                 caretaker.Move(Vector3.zero, delta);
             }
+            if (lan == null || lan.IsHost)
+                AdvanceSupplyDelivery();
             if (lan != null)
                 UpdateLan(delta);
             previousMouse = mouse;
@@ -135,11 +137,12 @@ namespace DesertLantern
 
         private void LateUpdate()
         {
-            if (!isMap && caretaker != null)
-            {
+            if (isMap)
+                return;
+            if (caretaker != null || (lan != null && lan.IsHost))
                 UpdateServicePresentation(Time.deltaTime);
+            if (caretaker != null)
                 PlaceCamera(1 - Mathf.Exp(-11f * Time.deltaTime));
-            }
         }
 
         private void PlaceCamera(float blend)
@@ -272,7 +275,7 @@ namespace DesertLantern
 
         private void Interact()
         {
-            if (RequestLuggage())
+            if (RequestSupplyDelivery() || RequestLuggage())
                 return;
             if (AtComputer(caretaker.Position))
             {
@@ -341,6 +344,16 @@ namespace DesertLantern
                 fromRoom != NoRoom && fromRoom != toRoom ? MotelWorld.RoomApproach(fromRoom) : origin;
             Vector3 end = !inside && destinationInside ? threshold :
                 toRoom != NoRoom && fromRoom != toRoom ? MotelWorld.RoomApproach(toRoom) : destination;
+            bool startWestOfOffice = start.x < -12.3f && start.z > 3.65f;
+            bool endWestOfOffice = end.x < -12.3f && end.z > 3.65f;
+            bool fromStorageSide = startWestOfOffice && end.x >= -12.3f;
+            bool towardStorageSide = endWestOfOffice && start.x >= -12.3f;
+            if (fromStorageSide)
+            {
+                start = new Vector3(-13.10f, 0, 3.45f);
+                route.Enqueue(start);
+            }
+
             bool leftToRooms = start.x < -7.5f && end.x > -7.05f && end.z > 3.65f;
             bool roomsToLeft = end.x < -7.5f && start.x > -7.05f && start.z > 3.65f;
             if (start.z < end.z)
@@ -351,6 +364,9 @@ namespace DesertLantern
 
             if (start.z >= end.z)
                 MotelWorld.RouteAcrossParking(route, start, end);
+
+            if (towardStorageSide)
+                route.Enqueue(new Vector3(-13.10f, 0, 3.45f));
 
             if (!inside && destinationInside)
             {
@@ -527,6 +543,7 @@ namespace DesertLantern
                 SelectDoor(Occupied);
 
             DrawLuggageMarker(scale);
+            DrawSupplyDeliveryMarker(scale);
             if (InsideOffice(caretaker.Position) &&
                 DrawWorldButton(MotelWorld.ComputerScreen, "Reception computer", 154 * scale, scale))
             {
@@ -537,7 +554,7 @@ namespace DesertLantern
             }
 
             int room = NearRoom();
-            string objective = (AtComputer(caretaker.Position) ? "E  ·  Open the reception computer" : ServiceObjective()) ?? (escorting
+            string objective = (AtComputer(caretaker.Position) ? "E  ·  Open the reception computer" : ServiceObjective()) ?? SupplyObjective() ?? (escorting
                 ? (room == Occupied ? "Wait at the door for your guest" : $"Escort your guest to Room {Occupied + 1}")
                 : Occupied >= Guests.Length ? "All guests are checked in"
                 : AtOffice && GuestWaiting ? (Service.HasReservation(Occupied)

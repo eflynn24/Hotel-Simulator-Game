@@ -111,7 +111,7 @@ entire output folder together when copying it to other players.
 The game uses GameObjects and a listen server, with direct Unity Transport
 connections. The host allocates four player slots and owns avatar movement,
 collision, active escorts, room occupancy, cash, door state, suitcase
-ownership, and supply stock. `LanWorldState` is a registered
+ownership, supply orders, crate ownership, and supply stock. `LanWorldState` is a registered
 NetworkObject. Its player list and motel NetworkVariable are the initial
 state for late joiners and current state for connected clients.
 
@@ -146,8 +146,8 @@ Both peers saw the room charge raise cash from $230 to $295 and the luggage
 delivery raise it to $305. The host rejected a distant pickup and repeated delivery. A client then
 bought four towels for $18 at the reception computer. Both players saw the
 new $287 balance and four towels in stock. A late joiner received that
-balance, stock, and occupied room. Protocol version 4 includes service state,
-supply inventory, and reservations, so everyone in a session needs the same build.
+balance, stock, and occupied room. Protocol version 5 includes service state,
+supply inventory, reservations, and delivery ownership, so everyone in a session needs the same build.
 
 Two Chromium clients joined the same Linux WebSocket host from the local HTTP
 County Map. Both showed the three connected avatars, movement from one browser
