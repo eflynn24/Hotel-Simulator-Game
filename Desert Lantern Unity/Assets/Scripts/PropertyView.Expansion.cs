@@ -39,8 +39,8 @@ namespace DesertLantern
         {
             MotelService service = Service;
             float y = panel.y + 100 * scale;
-            GUI.Label(new Rect(x, y, width, 28 * scale),
-                $"Cash ${service.Cash} · {service.RoomCapacity} rooms · Amenity sales ${service.ExpansionRevenue}", label);
+            DrawDeskSummary(new Rect(x, y, width, 28 * scale), scale,
+                $"Cash ${service.Cash}    ·    {service.RoomCapacity} rooms    ·    Amenity sales ${service.ExpansionRevenue}");
             if (selectedExpansion == -2)
             {
                 DrawManagement(panel, x, width, scale);
@@ -73,12 +73,12 @@ namespace DesertLantern
                 selectedExpansion = -1;
                 return;
             }
-            GUI.Label(new Rect(x + 84 * scale, y + 33 * scale, width - 84 * scale, 29 * scale), selected.Name, detail);
+            DrawFittedText(new Rect(x + 84 * scale, y + 33 * scale, width - 84 * scale, 29 * scale), selected.Name, detail);
             if (!service.HasExpansion(project))
             {
                 if (project == Expansion.Annex && !service.OwnsAnnexLand)
                 {
-                    GUI.Label(new Rect(x, y + 74 * scale, width, 58 * scale),
+                    DrawFittedText(new Rect(x, y + 74 * scale, width, 58 * scale),
                         "Purchase the neighboring parcel before building the annex. Complete two stays to qualify.", label);
                     GUI.enabled = service.CompletedStays >= MotelService.ExpansionMinimumStays && service.Cash >= MotelService.AnnexLandCost;
                     if (DrawButton(new Rect(x, y + 139 * scale, width, 34 * scale), $"Purchase neighboring lot · ${MotelService.AnnexLandCost}"))
@@ -90,7 +90,7 @@ namespace DesertLantern
                     ? $"Complete {MotelService.ExpansionMinimumStays} stays to start investing ({service.CompletedStays} completed)."
                     : project == Expansion.UpperAnnex && !service.HasExpansion(Expansion.Annex)
                         ? "Build the guest annex first." : ExpansionDescription(project);
-                GUI.Label(new Rect(x, y + 74 * scale, width, 58 * scale), prerequisite, label);
+                DrawFittedText(new Rect(x, y + 74 * scale, width, 58 * scale), prerequisite, label);
                 GUI.enabled = service.CanExpand(project);
                 if (DrawButton(new Rect(x, y + 139 * scale, width, 34 * scale), $"Invest ${selected.Investment}"))
                     RequestExpansion(project, ExpansionAction.Build);
@@ -154,7 +154,7 @@ namespace DesertLantern
             }
 
             if (!string.IsNullOrEmpty(expansionFeedback))
-                GUI.Label(new Rect(x, panel.y + 387 * scale, width, 31 * scale), expansionFeedback, label);
+                DrawFittedText(new Rect(x, panel.y + 387 * scale, width, 31 * scale), expansionFeedback, label);
         }
 
         private void DrawRoomMealOrders(MotelService service, Expansion project, float x, float y, float width, float scale)
@@ -207,7 +207,7 @@ namespace DesertLantern
         }
 
         private void ExpansionStatus(float x, float y, float width, float scale, string text) =>
-            GUI.Label(new Rect(x, y, width, 49 * scale), text, label);
+            DrawFittedText(new Rect(x, y, width, 49 * scale), text, label);
 
         private void ExpansionButton(Expansion project, ExpansionAction action, float x, float y, float width, float scale,
             int row, string caption, bool enabled = true, int option = 0)

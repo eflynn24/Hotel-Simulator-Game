@@ -5,7 +5,6 @@ namespace DesertLantern
     public sealed partial class PropertyView
     {
         private const byte DecisionAction = 25;
-        private bool viewingDecisions;
         private bool viewingMastery;
 
         private void HandleDecision(Vector3 data, Vector3 position)

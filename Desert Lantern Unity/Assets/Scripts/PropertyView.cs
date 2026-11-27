@@ -1016,6 +1016,8 @@ namespace DesertLantern
 
         private bool DrawButton(Rect bounds, string text)
         {
+            if (computerTheme)
+                return BookingButton(bounds, text, DeskSurface);
             Color previous = GUI.backgroundColor;
             GUI.backgroundColor = Accent;
             int fontSize = button.fontSize;

@@ -335,6 +335,8 @@ namespace DesertLantern
             }
         }
 
+        public int StayStart(int room) => checkInMinutes[room];
+        public int StayRate(int room) => stayRates[room];
         public int DepartureMinute(int room) => checkoutMinutes[room];
 
         public int CheckoutWaiting()

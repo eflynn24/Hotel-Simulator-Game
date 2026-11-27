@@ -212,26 +212,37 @@ namespace DesertLantern
                 RequestPropertyCare(2, inspectionRoom);
         }
 
+        private static readonly string[] ReportPeriods = { "Today", "This week", "This month" };
+
         private void DrawFinancialReport(Rect panel, float x, float width, float scale)
         {
             MotelService service = Service;
             float y = panel.y + 105 * scale;
-            string period = reportPeriod == 0 ? "Today" : reportPeriod == 1 ? "This week" : "This month";
-            if (DrawButton(new Rect(x, y, 125 * scale, 28 * scale), period))
-                reportPeriod = (reportPeriod + 1) % 3;
-            GUI.Label(new Rect(x + 134 * scale, y, width - 134 * scale, 28 * scale),
-                $"Cash ${service.Cash} · Loan ${service.LoanBalance}", detail);
+            float periodWidth = 88 * scale;
+            for (int period = 0; period < ReportPeriods.Length; period++)
+                if (BookingButton(new Rect(x + period * periodWidth, y, periodWidth - 4 * scale, 28 * scale),
+                    ReportPeriods[period], reportPeriod == period ? DeskPriority : DeskSurface))
+                    reportPeriod = period;
+            DrawDeskSummary(new Rect(x + 3 * periodWidth + 4 * scale, y, width - 3 * periodWidth - 4 * scale, 28 * scale), scale,
+                $"Cash ${service.Cash}    ·    Loan ${service.LoanBalance}");
             int profit = 0;
+            int rows = (AccountNames.Length + 1) / 2;
+            float column = (width - 10 * scale) / 2;
             for (int account = 0; account < AccountNames.Length; account++)
             {
                 int value = service.ReportAmount(reportPeriod, (Account)account);
                 if (account != (int)Account.Financing)
                     profit += value;
-                GUI.Label(new Rect(x, y + (33 + account * 15) * scale, width, 23 * scale), AccountNames[account], label);
-                GUI.Label(new Rect(x + width - 84 * scale, y + (33 + account * 15) * scale, 82 * scale, 23 * scale),
-                    value.ToString("+$0;−$0;$0"), label);
+                float left = x + (account / rows) * (column + 10 * scale);
+                var row = new Rect(left, y + (34 + account % rows * 27) * scale, column, 25 * scale);
+                if (account % rows % 2 == 0)
+                    Fill(row, DeskSurface);
+                DrawFittedText(new Rect(row.x + 7 * scale, row.y, column - 82 * scale, row.height), AccountNames[account], detail);
+                DrawFittedText(new Rect(row.xMax - 72 * scale, row.y, 68 * scale, row.height),
+                    value.ToString("+$0;-$0;$0"), label);
             }
-            GUI.Label(new Rect(x, y + 180 * scale, width, 27 * scale), $"Profit / loss   {profit:+$0;−$0;$0}", detail);
+            DrawDeskSummary(new Rect(x, y + 180 * scale, width, 27 * scale), scale,
+                $"Profit / loss   {profit:+$0;-$0;$0}");
             float half = width / 2;
             if (DrawButton(new Rect(x, y + 211 * scale, half - 3 * scale, 29 * scale), "Parts ×3 · $18"))
                 RequestPropertyCare(3);
