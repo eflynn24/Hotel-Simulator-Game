@@ -27,10 +27,10 @@ the exterior navigation is tested in the editor.
 ## Multiplayer and management roadmap
 
 Implement and verify one milestone at a time. The current milestone is
-physical supply delivery. Order at reception, pick up the crate at the
-delivery bay, and carry it to the supply shelf. Prioritize the guest stay
-and requests loop next. Continue with the reception phone for reservations,
-cancellations, refunds and overbooking, then a shared day/night cycle.
+the shared motel clock, day/night lighting, scheduled reservations, checkout,
+and reviews. Supply crates now go to shelves inside reception. Prioritize
+the guest stay and requests loop next, then the reception phone, refunds
+and overbooking.
 Desktop hosts accept browser players over WebSocket, including from the
 local HTTP copy.
 

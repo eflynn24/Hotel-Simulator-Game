@@ -219,8 +219,12 @@ namespace DesertLantern
             GameObject clock = Cylinder("Wall clock face", new Vector3(-9.35f, 2.39f, 8.526f),
                 new Vector3(.23f, .034f, .23f), linen);
             clock.transform.rotation = Quaternion.Euler(90, 0, 0);
-            Box("Clock minute hand", new Vector3(-9.35f, 2.46f, 8.485f), new Vector3(.021f, .15f, .015f), dark);
-            Box("Clock hour hand", new Vector3(-9.31f, 2.39f, 8.484f), new Vector3(.10f, .023f, .015f), dark);
+            clockMinuteHand = Node("Clock minute pivot", new Vector3(-9.35f, 2.39f, 8.482f));
+            clockHour = Node("Clock hour pivot", new Vector3(-9.35f, 2.39f, 8.470f));
+            Piece(clockMinuteHand, "Clock minute hand", new Vector3(0, .079f, 0),
+                new Vector3(.021f, .169f, .012f), dark);
+            Piece(clockHour, "Clock hour hand", new Vector3(0, .05f, 0),
+                new Vector3(.028f, .112f, .012f), dark);
             Cylinder("Reception ceiling globe", new Vector3(-9.65f, 2.84f, 6.32f), new Vector3(.28f, .071f, .28f), lamp);
             WarmLight(new Vector3(-9.65f, 2.68f, 6.39f), 5.8f, 2.1f);
             Box("Desk sconce", new Vector3(-8.08f, 1.70f, 8.48f), new Vector3(.22f, .20f, .12f), lamp);

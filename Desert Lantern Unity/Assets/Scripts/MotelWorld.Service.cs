@@ -13,7 +13,7 @@ namespace DesertLantern
         private readonly bool[] bagDropped = new bool[4];
         private readonly Transform[] trunks = new Transform[4];
         public static readonly Vector3 DeliveryBay = new Vector3(-13.80f, 0, 1.20f);
-        public static readonly Vector3 SupplyStorage = new Vector3(-13.65f, 0, 6.45f);
+        public static readonly Vector3 SupplyStorage = new Vector3(-8.46f, 0, 5.55f);
         private static readonly Vector3 CrateAtBay = new Vector3(-13.80f, .55f, 2.03f);
         private Transform supplyCrate;
         private BoxCollider supplyCollider;
@@ -26,14 +26,14 @@ namespace DesertLantern
             Box("Delivery pallet", new Vector3(-13.80f, .16f, 2.03f),
                 new Vector3(1.45f, .29f, .98f), oak, SolidLayer);
             Sign("DELIVERIES", new Vector3(-13.80f, .31f, 1.51f), .15f, Color.white);
-            Box("Supply storage back", new Vector3(-14.46f, .92f, 6.46f),
+            Box("Supply storage back", new Vector3(-7.48f, .92f, 5.55f),
                 new Vector3(.16f, 1.84f, 1.48f), iron, SolidLayer);
             for (int level = 0; level < 3; level++)
-                Box("Supply shelf", new Vector3(-14.19f, .25f + level * .66f, 6.46f),
+                Box("Supply shelf", new Vector3(-7.78f, .25f + level * .66f, 5.55f),
                     new Vector3(.65f, .095f, 1.50f), oak, SolidLayer);
-            Box("Storage sign board", new Vector3(-14.20f, 1.90f, 5.72f),
+            Box("Storage sign board", new Vector3(-7.80f, 1.90f, 4.82f),
                 new Vector3(1.10f, .25f, .08f), dark);
-            Sign("SUPPLIES", new Vector3(-14.20f, 1.90f, 5.67f), .17f, Color.white);
+            Sign("SUPPLIES", new Vector3(-7.80f, 1.90f, 4.77f), .17f, Color.white);
             supplyCrate = Node("Supply crate", CrateAtBay);
             Piece(supplyCrate, "Cardboard parcel", Vector3.zero, new Vector3(.68f, .49f, .48f), carton);
             Piece(supplyCrate, "Packing tape", new Vector3(0, .247f, 0),

@@ -234,7 +234,8 @@ namespace DesertLantern
             }
 
             LanMotel shared = lan.State.Motel.Value;
-            if (guest != null && (!shared.GuestPresent || Occupied != shared.Occupied))
+            if (guest != null && (!shared.GuestPresent || Occupied != shared.Occupied ||
+                Service.ReservationCancelled(Occupied) != shared.Service.ReservationCancelled(Occupied)))
             {
                 guest.Dispose();
                 guest = null;
@@ -263,10 +264,13 @@ namespace DesertLantern
         {
             if (!peers.TryGetValue(id, out Peer peer))
                 return;
-            if (action == ReceptionAction && GuestWaiting && AtOfficePosition(peer.Walker.Position))
-                StartEscort(id, peer.Walker.Position, peer.Route);
+            if (action == ReceptionAction)
+                HandleReception(id, peer.Walker.Position, peer.Route);
             else if (action == LuggageAction)
                 TryLuggage(id, peer.Walker.Position);
+            else if (action == ClockSpeedAction && (position.x == 1 || position.x == 2 ||
+                position.x == 4 || position.x == 8))
+                SetClockSpeed((byte)position.x);
             else if (action == SupplyDeliveryAction)
                 HandleSupplyDelivery(id, peer.Walker.Position);
             else if (action == PurchaseAction && Finite(position.x) &&
@@ -275,6 +279,9 @@ namespace DesertLantern
             else if ((action == ConfirmBookingAction || action == CancelBookingAction) &&
                 (position.x == 1 || position.x == 2))
                 UpdateBooking((int)position.x, action == ConfirmBookingAction, peer.Walker.Position);
+            else if (action == AdjustScheduleAction && (position.x == 1 || position.x == 2) &&
+                (position.y == 0 || position.y == 1) && (position.z == -1 || position.z == 1))
+                UpdateSchedule((int)position.x, position.y == 1, (int)position.z, peer.Walker.Position);
             else if (action == DoorAction && Finite(position.x) && position.x >= 0 && position.x < Guests.Length)
                 ToggleDoor((int)position.x, peer.Walker.Position);
             else if (action == DestinationAction && ValidDestination(position) &&

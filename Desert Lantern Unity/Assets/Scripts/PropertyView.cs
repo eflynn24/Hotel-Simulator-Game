@@ -28,6 +28,9 @@ namespace DesertLantern
         private float yaw;
         private float pitch = 19;
         private float nextGuestDelay;
+        private float clockFraction;
+        private int guestArrivalMinute;
+        private int guestDeskMinute;
         private bool escorting;
         private bool showSettings;
         private int inspectedRoom = NoRoom;
@@ -128,8 +131,8 @@ namespace DesertLantern
             {
                 caretaker.Move(Vector3.zero, delta);
             }
-            if (lan == null || lan.IsHost)
-                AdvanceSupplyDelivery();
+            if (lan == null || (lan.IsHost && (!lan.Dedicated || peers.Count > 0)))
+                AdvanceMotelClock(delta);
             if (lan != null)
                 UpdateLan(delta);
             previousMouse = mouse;
@@ -141,6 +144,7 @@ namespace DesertLantern
                 return;
             if (caretaker != null || (lan != null && lan.IsHost))
                 UpdateServicePresentation(Time.deltaTime);
+            world.ShowClock(Service.ClockMinute, view);
             if (caretaker != null)
                 PlaceCamera(1 - Mathf.Exp(-11f * Time.deltaTime));
         }
@@ -195,8 +199,13 @@ namespace DesertLantern
 
         private void SpawnGuest()
         {
-            if (Occupied >= Guests.Length || Service.Bag != LuggageStatus.None)
+            if (Service.Bag != LuggageStatus.None)
                 return;
+            int arrival = Service.NextArrival();
+            if (arrival == NoRoom)
+                return;
+            Occupied = arrival;
+            guestArrivalMinute = Service.HasReservation(arrival) ? Service.BookingStart(arrival) : Service.ClockMinute;
             guest = new MotelWalker(transform, CurrentGuestModel, MotelWorld.GuestSpawn);
             if (caretaker != null)
                 Physics.IgnoreCollision(caretaker.Capsule, guest.Capsule);
@@ -207,6 +216,7 @@ namespace DesertLantern
         private void StartEscort(ulong id, Vector3 position, Queue<Vector3> route)
         {
             guideId = id;
+            guestDeskMinute = Service.ClockMinute;
             route.Clear();
             guestRoute.Clear();
             lastBreadcrumb = position;
@@ -220,9 +230,9 @@ namespace DesertLantern
             if (nextGuestDelay > 0)
             {
                 nextGuestDelay -= delta;
-                if (nextGuestDelay <= 0)
-                    SpawnGuest();
             }
+            if (guest == null && nextGuestDelay <= 0)
+                SpawnGuest();
             if (guest == null)
                 return;
 
@@ -257,10 +267,9 @@ namespace DesertLantern
                 guest = null;
                 escorting = false;
                 MotelService service = Service;
-                if (service.CheckIn(Occupied))
+                if (service.CheckIn(Occupied, guestArrivalMinute, guestDeskMinute))
                 {
                     Service = service;
-                    Occupied++;
                 }
             }
         }
@@ -283,7 +292,7 @@ namespace DesertLantern
                 return;
             }
 
-            if (GuestWaiting && AtOffice)
+            if (AtOffice && (GuestWaiting || Service.CheckoutWaiting() != NoRoom))
             {
                 RequestReception();
                 return;
@@ -301,7 +310,7 @@ namespace DesertLantern
             if (lan != null && !lan.IsHost)
                 lan.State?.ActionRpc(ReceptionAction, Vector3.zero);
             else
-                StartEscort(lan?.LocalId ?? 0, caretaker.Position, walkRoute);
+                HandleReception(lan?.LocalId ?? 0, caretaker.Position, walkRoute);
         }
 
         private void SetActorPause(bool paused)
@@ -409,7 +418,7 @@ namespace DesertLantern
             }
             else if (hit.point.x > -12.1f && hit.point.x < -7.2f && hit.point.z > 3.85f)
             {
-                if (GuestWaiting && AtOffice)
+                if (AtOffice && (GuestWaiting || Service.CheckoutWaiting() != NoRoom))
                     RequestReception();
                 else
                     SetDestination(MotelWorld.OfficeApproach);
@@ -532,7 +541,7 @@ namespace DesertLantern
             if (caretaker == null)
                 return;
 
-            if (GuestWaiting && DrawWorldButton(MotelWorld.OfficeSign, "Front Office", 116 * scale, scale))
+            if ((GuestWaiting || Service.CheckoutWaiting() != NoRoom) && DrawWorldButton(MotelWorld.OfficeSign, "Front Office", 116 * scale, scale))
             {
                 if (AtOffice)
                     RequestReception();
@@ -556,18 +565,21 @@ namespace DesertLantern
             int room = NearRoom();
             string objective = (AtComputer(caretaker.Position) ? "E  ·  Open the reception computer" : ServiceObjective()) ?? SupplyObjective() ?? (escorting
                 ? (room == Occupied ? "Wait at the door for your guest" : $"Escort your guest to Room {Occupied + 1}")
-                : Occupied >= Guests.Length ? "All guests are checked in"
+                : AtOffice && Service.CheckoutWaiting() != NoRoom ? "E  ·  Check out the departing guest"
                 : AtOffice && GuestWaiting ? (Service.HasReservation(Occupied)
                     ? "E  ·  Check in the online reservation"
                     : "E or click Front Office to check in your guest")
                 : room != NoRoom ? $"E  ·  Open or close Room {room + 1}"
-                : "Meet your next guest at the Front Office");
+                : GuestWaiting ? "Meet your next guest at the Front Office" : "Waiting for the next arrival");
             float width = Mathf.Min(610 * scale, screen.width - 2 * margin);
             Rect hud = new Rect(margin, screen.height - margin - 61 * scale, width, 61 * scale);
             Fill(hud, Ink);
             GUI.Label(new Rect(hud.x + 10 * scale, hud.y + 4 * scale, hud.width - 20 * scale, 27 * scale), objective, detail);
             GUI.Label(new Rect(hud.x + 10 * scale, hud.y + 31 * scale, hud.width - 20 * scale, 25 * scale),
-                $"Cash  ${Service.Cash}   ·   {Occupied}/{Guests.Length} occupied   ·   Shift to run   ·   Right-drag to look", label);
+                $"{MotelService.DisplayTime(Service.ClockMinute)}   ·   Cash ${Service.Cash}   ·   {Service.ActiveRoomCount}/{Guests.Length} occupied", label);
+            if (DrawButton(new Rect(hud.xMax - 100 * scale, hud.y + 32 * scale, 93 * scale, 24 * scale),
+                $"Time x{Mathf.Max(1, (int)Service.ClockSpeed)}"))
+                CycleClockSpeed();
             DrawServiceAction(hud, scale);
             if (!hud.Contains(Event.current.mousePosition))
                 HandleWorldClick();

@@ -7,6 +7,7 @@ namespace DesertLantern
         private const byte LuggageAction = 2;
         private const byte DoorAction = 3;
         private const byte SupplyDeliveryAction = 7;
+        private const byte ClockSpeedAction = 9;
         private static MotelService soloService = MotelService.New();
         private MotelService lanService = MotelService.New();
 
@@ -81,20 +82,72 @@ namespace DesertLantern
                 ToggleDoor(room, caretaker.Position);
         }
 
-        private void AdvanceSupplyDelivery()
+        private void AdvanceMotelClock(float delta)
+        {
+            clockFraction += delta * 6f * Mathf.Max(1, (int)Service.ClockSpeed);
+            int minutes = (int)clockFraction;
+            if (minutes == 0)
+                return;
+            clockFraction -= minutes;
+            MotelService service = Service;
+            bool expiresAtDesk = guest != null && service.HasReservation(Occupied) &&
+                service.ClockMinute + minutes >= service.BookingEnd(Occupied);
+            service.AdvanceClock(service.ClockMinute + minutes);
+            service.ExpireBooking(1);
+            service.ExpireBooking(2);
+            service.AdvanceDelivery();
+            Service = service;
+            if (expiresAtDesk)
+            {
+                guest.Dispose();
+                guest = null;
+                escorting = false;
+                guestRoute.Clear();
+            }
+        }
+
+        private void SetClockSpeed(byte speed)
         {
             MotelService service = Service;
-            if (service.Delivery != SupplyDelivery.InTransit)
-                return;
-            service.AdvanceDelivery(Time.unscaledTime);
+            service.ClockSpeed = speed;
             Service = service;
+        }
+
+        private void CycleClockSpeed()
+        {
+            byte speed = Service.ClockSpeed switch
+            {
+                1 => 2,
+                2 => 4,
+                4 => 8,
+                _ => 1
+            };
+            if (lan != null && !lan.IsHost)
+                lan.State?.ActionRpc(ClockSpeedAction, new Vector3(speed, 0, 0));
+            else
+                SetClockSpeed(speed);
+        }
+
+        private void HandleReception(ulong worker, Vector3 position, System.Collections.Generic.Queue<Vector3> route)
+        {
+            if (!AtOfficePosition(position))
+                return;
+            MotelService service = Service;
+            int checkout = service.CheckoutWaiting();
+            if (checkout != NoRoom)
+            {
+                service.CompleteCheckout(checkout, true);
+                Service = service;
+            }
+            else if (GuestWaiting)
+                StartEscort(worker, position, route);
         }
 
         private static bool AtDeliveryBay(Vector3 position) =>
             MotelWalker.Distance(position, MotelWorld.DeliveryBay) < 1.25f;
 
         private static bool AtSupplyStorage(Vector3 position) =>
-            MotelWalker.Distance(position, MotelWorld.SupplyStorage) < 1.25f;
+            InsideOffice(position) && MotelWalker.Distance(position, MotelWorld.SupplyStorage) < 1.10f;
 
         private void HandleSupplyDelivery(ulong worker, Vector3 position)
         {

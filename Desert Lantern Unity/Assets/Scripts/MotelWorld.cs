@@ -152,6 +152,32 @@ namespace DesertLantern
                 signMaterial.mainTexture = rebuilt.material.mainTexture;
         }
 
+        private Light daylightSun;
+        private Transform clockHour;
+        private Transform clockMinuteHand;
+        private int lastShownMinute = -1;
+
+        public void ShowClock(int absoluteMinute, Camera camera)
+        {
+            if (absoluteMinute == lastShownMinute)
+                return;
+            lastShownMinute = absoluteMinute;
+            float hour = absoluteMinute % MotelService.MinutesPerDay / 60f;
+            float elevation = Mathf.Sin((hour - 6f) * Mathf.PI / 12f);
+            float daylight = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(-.14f, .36f, elevation));
+            float warm = Mathf.Clamp01(1f - Mathf.Abs(elevation) * 3f) * daylight;
+            daylightSun.transform.rotation = Quaternion.Euler(Mathf.Max(4f, elevation * 58f), hour * 15f - 210f, 0);
+            daylightSun.intensity = 1.12f * daylight;
+            daylightSun.color = Color.Lerp(new Color(1f, .95f, .84f), new Color(1f, .63f, .38f), warm);
+            RenderSettings.ambientLight = Color.Lerp(new Color(.20f, .23f, .34f),
+                new Color(.56f, .58f, .57f), daylight);
+            Color sky = Color.Lerp(new Color(.075f, .105f, .19f), new Color(.66f, .71f, .72f), daylight);
+            camera.backgroundColor = Color.Lerp(sky, new Color(.81f, .49f, .36f), warm * .55f);
+            RenderSettings.fogColor = camera.backgroundColor;
+            clockHour.localRotation = Quaternion.Euler(0, 0, -hour * 30f);
+            clockMinuteHand.localRotation = Quaternion.Euler(0, 0, -(absoluteMinute % 60) * 6f);
+        }
+
         private void Lighting(bool overview)
         {
             RenderSettings.ambientMode = AmbientMode.Flat;
@@ -169,7 +195,7 @@ namespace DesertLantern
             sun.intensity = 1.12f;
             sun.shadows = LightShadows.Soft;
             sun.shadowStrength = .72f;
-            RenderSettings.sun = sun;
+            RenderSettings.sun = daylightSun = sun;
         }
 
         private GameObject Box(string name, Vector3 position, Vector3 scale, Material material, int layer = 0)
