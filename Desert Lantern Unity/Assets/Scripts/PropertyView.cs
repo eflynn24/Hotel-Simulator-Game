@@ -38,6 +38,9 @@ namespace DesertLantern
         private bool AtOffice => AtOfficePosition(caretaker.Position);
         private static bool AtOfficePosition(Vector3 position) =>
             MotelWalker.Distance(position, MotelWorld.OfficeApproach) < 1.6f;
+        private string CurrentGuestModel => Service.ReservationCancelled(Occupied)
+            ? Guests[Occupied == 1 ? 3 : 0]
+            : Guests[Occupied];
         private bool GuestWaiting => guest != null && !escorting;
         private bool Modal => showSettings || lanMenu || computerOpen || inspectedRoom != NoRoom;
 
@@ -76,9 +79,12 @@ namespace DesertLantern
 
             if (lan == null || lan.IsHost)
             {
-                caretaker = new MotelWalker(transform, "Caretaker", MotelWorld.Spawn);
+                if (lan == null || !lan.Dedicated)
+                {
+                    caretaker = new MotelWalker(transform, "Caretaker", MotelWorld.Spawn);
+                    PlaceCamera(1);
+                }
                 SpawnGuest();
-                PlaceCamera(1);
             }
         }
 
@@ -118,7 +124,7 @@ namespace DesertLantern
                     SetActorPause(true);
                 }
             }
-            else if (lan != null && lan.IsHost)
+            else if (lan != null && lan.IsHost && caretaker != null)
             {
                 caretaker.Move(Vector3.zero, delta);
             }
@@ -188,8 +194,9 @@ namespace DesertLantern
         {
             if (Occupied >= Guests.Length || Service.Bag != LuggageStatus.None)
                 return;
-            guest = new MotelWalker(transform, Guests[Occupied], MotelWorld.GuestSpawn);
-            Physics.IgnoreCollision(caretaker.Capsule, guest.Capsule);
+            guest = new MotelWalker(transform, CurrentGuestModel, MotelWorld.GuestSpawn);
+            if (caretaker != null)
+                Physics.IgnoreCollision(caretaker.Capsule, guest.Capsule);
             foreach (Peer peer in peers.Values)
                 Physics.IgnoreCollision(peer.Walker.Capsule, guest.Capsule);
         }
@@ -455,7 +462,7 @@ namespace DesertLantern
             if (lanMenu)
                 DrawLanMenu(screen, scale);
             else if (computerOpen)
-                DrawSupplyComputer(screen, scale);
+                DrawReceptionComputer(screen, scale);
             else if (showSettings)
                 DrawSettings(screen, scale);
             else if (inspectedRoom != NoRoom)
@@ -521,7 +528,7 @@ namespace DesertLantern
 
             DrawLuggageMarker(scale);
             if (InsideOffice(caretaker.Position) &&
-                DrawWorldButton(MotelWorld.ComputerScreen, "Supplies computer", 154 * scale, scale))
+                DrawWorldButton(MotelWorld.ComputerScreen, "Reception computer", 154 * scale, scale))
             {
                 if (AtComputer(caretaker.Position))
                     SetComputerVisible(true);
@@ -530,10 +537,12 @@ namespace DesertLantern
             }
 
             int room = NearRoom();
-            string objective = (AtComputer(caretaker.Position) ? "E  ·  Open the supplies computer" : ServiceObjective()) ?? (escorting
+            string objective = (AtComputer(caretaker.Position) ? "E  ·  Open the reception computer" : ServiceObjective()) ?? (escorting
                 ? (room == Occupied ? "Wait at the door for your guest" : $"Escort your guest to Room {Occupied + 1}")
                 : Occupied >= Guests.Length ? "All guests are checked in"
-                : AtOffice && GuestWaiting ? "E or click Front Office to check in your guest"
+                : AtOffice && GuestWaiting ? (Service.HasReservation(Occupied)
+                    ? "E  ·  Check in the online reservation"
+                    : "E or click Front Office to check in your guest")
                 : room != NoRoom ? $"E  ·  Open or close Room {room + 1}"
                 : "Meet your next guest at the Front Office");
             float width = Mathf.Min(610 * scale, screen.width - 2 * margin);

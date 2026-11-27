@@ -31,6 +31,7 @@ namespace DesertLantern
         private string exitNotice;
         private float deadline;
         internal bool IsHost => hosting;
+        internal bool Dedicated { get; private set; }
         internal ulong LocalId => manager.LocalClientId;
         internal bool Connected => entered && !stopping;
         internal ushort Port { get; private set; }
@@ -53,7 +54,7 @@ namespace DesertLantern
                 : WebSocketPort.ToString();
             if (Application.isBatchMode)
                 Application.targetFrameRate = 60;
-            if (StartLan(true, null, port, webSocket: true))
+            if (StartLan(true, null, port, webSocket: true, dedicated: Application.isBatchMode))
                 Debug.Log($"Browser LAN host listening on TCP port {port}.");
             else
             {
@@ -65,7 +66,7 @@ namespace DesertLantern
 #endif
         internal bool HasPeer(ulong id) => manager.ConnectedClients.ContainsKey(id);
 
-        internal static bool StartLan(bool host, string address, string portText, bool webSocket = false, bool secureWebSocket = false)
+        internal static bool StartLan(bool host, string address, string portText, bool webSocket = false, bool secureWebSocket = false, bool dedicated = false)
         {
             if (Active != null)
                 return false;
@@ -99,6 +100,7 @@ namespace DesertLantern
             DontDestroyOnLoad(session.gameObject);
             Application.runInBackground = true;
             session.hosting = host;
+            session.Dedicated = dedicated;
             session.Port = port;
             session.transport = session.gameObject.AddComponent<UnityTransport>();
             session.transport.UseWebSockets = webSocket;
@@ -112,7 +114,7 @@ namespace DesertLantern
             session.manager = session.gameObject.AddComponent<NetworkManager>();
             session.manager.NetworkConfig = new NetworkConfig
             {
-                ProtocolVersion = 3,
+                ProtocolVersion = 4,
                 EnableSceneManagement = false,
                 ConnectionApproval = true,
                 NetworkTransport = session.transport,
@@ -130,7 +132,10 @@ namespace DesertLantern
             Notice = host ? "Starting LAN host…" : "Connecting…";
             session.deadline = Time.unscaledTime + (webSocket ? BrowserConnectTimeout : 12f);
 
-            if (!(host ? session.manager.StartHost() : session.manager.StartClient()))
+            bool started = host
+                ? (dedicated ? session.manager.StartServer() : session.manager.StartHost())
+                : session.manager.StartClient();
+            if (!started)
             {
                 session.Stop(host ? $"Could not host on {(webSocket ? "TCP" : "UDP")} port {port}." : "Could not start the connection.");
                 return false;
@@ -138,7 +143,8 @@ namespace DesertLantern
 
             if (host && !session.stopping)
             {
-                session.Slots[NetworkManager.ServerClientId] = 0;
+                if (!dedicated)
+                    session.Slots[NetworkManager.ServerClientId] = 0;
                 var state = Instantiate(prefab).GetComponent<LanWorldState>();
                 state.NetworkObject.Spawn(destroyWithScene: false);
                 session.Enter();
@@ -149,7 +155,7 @@ namespace DesertLantern
         private void Approve(NetworkManager.ConnectionApprovalRequest request, NetworkManager.ConnectionApprovalResponse response)
         {
             ulong id = request.ClientNetworkId;
-            byte first = id == NetworkManager.ServerClientId ? (byte)0 : (byte)1;
+            byte first = Dedicated || id == NetworkManager.ServerClientId ? (byte)0 : (byte)1;
             for (byte slot = first; slot < Capacity; slot++)
             {
                 if (Slots.ContainsValue(slot))

@@ -38,6 +38,8 @@ namespace DesertLantern
         public byte OpenDoors;
         public byte DeliveredBags;
         public byte BagRoom;
+        private byte confirmedReservations;
+        private byte cancelledReservations;
         public ulong Carrier;
         public LuggageStatus Bag;
 
@@ -54,6 +56,24 @@ namespace DesertLantern
             Bag = LuggageStatus.InCar;
             Cash += RoomRate;
             return true;
+        }
+
+        public bool HasReservation(int room) => (confirmedReservations & (1 << room)) != 0;
+
+        public bool ReservationCancelled(int room) => (cancelledReservations & (1 << room)) != 0;
+
+        public void UpdateReservation(int room, bool confirm)
+        {
+            int bit = 1 << room;
+            if ((UnlockedDoors & bit) != 0 || ReservationCancelled(room))
+                return;
+            if (confirm)
+                confirmedReservations |= (byte)bit;
+            else
+            {
+                confirmedReservations &= (byte)~bit;
+                cancelledReservations |= (byte)bit;
+            }
         }
 
         public bool PickUp(ulong player)
@@ -118,6 +138,8 @@ namespace DesertLantern
             serializer.SerializeValue(ref OpenDoors);
             serializer.SerializeValue(ref DeliveredBags);
             serializer.SerializeValue(ref BagRoom);
+            serializer.SerializeValue(ref confirmedReservations);
+            serializer.SerializeValue(ref cancelledReservations);
             serializer.SerializeValue(ref Carrier);
             serializer.SerializeValue(ref Bag);
         }
@@ -125,6 +147,8 @@ namespace DesertLantern
         public bool Equals(MotelService other) =>
             Cash == other.Cash && CleaningKits == other.CleaningKits && Towels == other.Towels &&
             LinenSets == other.LinenSets && UnlockedDoors == other.UnlockedDoors && OpenDoors == other.OpenDoors &&
-            DeliveredBags == other.DeliveredBags && BagRoom == other.BagRoom && Carrier == other.Carrier && Bag == other.Bag;
+            DeliveredBags == other.DeliveredBags && BagRoom == other.BagRoom &&
+            confirmedReservations == other.confirmedReservations && cancelledReservations == other.cancelledReservations &&
+            Carrier == other.Carrier && Bag == other.Bag;
     }
 }

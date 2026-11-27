@@ -128,7 +128,7 @@ namespace DesertLantern
             if (escorting && peers.TryGetValue(guideId, out Peer guide))
                 UpdateGuest(delta, guide.Walker.Position);
             else
-                UpdateGuest(delta, caretaker.Position);
+                UpdateGuest(delta, caretaker?.Position ?? MotelWorld.Spawn);
 
             if (Time.unscaledTime >= nextSnapshot)
             {
@@ -244,7 +244,7 @@ namespace DesertLantern
             if (shared.GuestPresent && Occupied < Guests.Length)
             {
                 if (guest == null)
-                    guest = new MotelWalker(transform, Guests[Occupied], shared.Guest.Position);
+                    guest = new MotelWalker(transform, CurrentGuestModel, shared.Guest.Position);
                 guest.ApplyReplica(shared.Guest, delta);
             }
         }
@@ -269,6 +269,9 @@ namespace DesertLantern
             else if (action == PurchaseAction && Finite(position.x) &&
                 position.x >= 0 && position.x < MotelService.Catalog.Length)
                 TryPurchase((int)position.x, peer.Walker.Position);
+            else if ((action == ConfirmBookingAction || action == CancelBookingAction) &&
+                (position.x == 1 || position.x == 2))
+                UpdateBooking((int)position.x, action == ConfirmBookingAction, peer.Walker.Position);
             else if (action == DoorAction && Finite(position.x) && position.x >= 0 && position.x < Guests.Length)
                 ToggleDoor((int)position.x, peer.Walker.Position);
             else if (action == DestinationAction && ValidDestination(position) &&

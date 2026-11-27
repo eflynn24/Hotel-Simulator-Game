@@ -27,8 +27,12 @@ the exterior navigation is tested in the editor.
 ## Multiplayer and management roadmap
 
 Implement and verify one milestone at a time. The current milestone is
-LAN co-op from the County Map. Desktop hosts can accept browser players over
-WebSocket when the Web build is served over local HTTP.
+the shared Reservations tab in the reception computer. The first online
+requests can be confirmed or closed before arrival. The next milestones
+are physical supply delivery, a ringing reception phone for reservations,
+cancellations, refunds and overbooking, and a shared day/night cycle.
+Desktop hosts accept browser players over WebSocket, including from the
+local HTTP copy.
 
 1. **LAN co-op** — Host or join a motel by local address, move together, and
    share the existing office, guest escorts, and room occupancy. Verify joins,
@@ -49,7 +53,7 @@ WebSocket when the Web build is served over local HTTP.
    unload deliveries, and stock vending machines.
 6. **Finances** — Add money and an accounting ledger. Pay utilities, internet,
    employee wages, insurance, and operating expenses. Add loans, demand-based
-   pricing, and reinvestment in expansion.
+   pricing based on occupancy, season, and events, and reinvestment in expansion.
 7. **Day and night** — Add a shared clock and vary customers and incidents at
    night.
 8. **Food service** — Add breakfast, room service, bars, and restaurants.

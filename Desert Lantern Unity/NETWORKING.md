@@ -30,7 +30,7 @@ On the motel's Wi-Fi network, open the
 [GitHub Pages game](https://eflynn24.github.io/Hotel-Simulator/) in current
 Chrome and click **Join LAN**. The published build uses the configured
 Windows Wi-Fi address and TCP port `7778`. The headless host starts when
-its Windows user signs in and occupies one of the four slots. Allow local
+its Windows user signs in and leaves all four slots available to players. Allow local
 network access if Chrome asks. If you previously denied it, change the
 site's permission in your browser settings and try again.
 
@@ -90,7 +90,7 @@ from its extracted directory:
 ./HotelSimulator.x86_64 -batchmode -nographics -motelBrowserHost 7778
 ```
 
-The host occupies one of the four slots, including when it runs without a window.
+A desktop host occupies one player slot. A headless host runs the session without an avatar and leaves all four slots open.
 If the host is in WSL NAT mode, use the native desktop host for other devices
 or configure the WSL networking so the TCP ports are reachable from the LAN.
 The local HTTP copy also supports direct WebSocket connections on browsers
@@ -146,8 +146,8 @@ Both peers saw the room charge raise cash from $230 to $295 and the luggage
 delivery raise it to $305. The host rejected a distant pickup and repeated delivery. A client then
 bought four towels for $18 at the reception computer. Both players saw the
 new $287 balance and four towels in stock. A late joiner received that
-balance, stock, and occupied room. Protocol version 3 includes service state
-and supply inventory, so everyone in a session needs the same build.
+balance, stock, and occupied room. Protocol version 4 includes service state,
+supply inventory, and reservations, so everyone in a session needs the same build.
 
 Two Chromium clients joined the same Linux WebSocket host from the local HTTP
 County Map. Both showed the three connected avatars, movement from one browser

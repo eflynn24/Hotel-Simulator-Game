@@ -12,8 +12,10 @@ This Unity 6 prototype starts over a 3D view of the county. Select
 - Start with **$230**. Guiding a guest to their room adds **$65** once.
   Follow the luggage prompt to the guest's car, pick up the case with **E**
   and set it down inside the assigned room for a **$10** tip.
-- At the reception counter, press **E** or click the computer to buy cleaning
-  kits, towels, or linen sets. Purchases deduct cash and add stock immediately.
+- At the reception counter, press **E** or click the computer to open
+  **Reservations** or **Supplies**. Confirm or close online requests before
+  guests arrive. Buy cleaning kits, towels, or linen sets from **Supplies**.
+  Purchases deduct cash and add stock immediately.
 - Open or close a nearby room door with **E**. Press **I** near it to check
   occupancy. **Menu** or **Escape** opens the display settings.
   **Back to map** returns to the county view.
