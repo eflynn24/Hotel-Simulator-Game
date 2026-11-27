@@ -439,7 +439,11 @@ public static partial class CoreGameplayChecks
         finally
         {
             if (walker != null)
-                Call(walker, "Dispose");
+            {
+                var graph = (UnityEngine.Playables.PlayableGraph)Field(walker, "graph").GetValue(walker);
+                if (graph.IsValid())
+                    graph.Destroy();
+            }
             UnityEngine.Object.DestroyImmediate(scene);
         }
     }
