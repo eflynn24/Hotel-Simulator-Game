@@ -1,0 +1,12 @@
+services:
+  unity-web:
+    image: nginx:alpine
+    ports:
+      - "127.0.0.1:${UNITY_WEB_PORT:-8081}:80"
+    volumes:
+      - type: bind
+        source: ./Builds/Web
+        target: /usr/share/nginx/html
+        read_only: true
+        bind:
+          create_host_path: false

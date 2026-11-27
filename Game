@@ -1,0 +1,240 @@
+#!/usr/bin/env python3
+"""A terminal motel management simulator."""
+
+import argparse
+import json
+import random
+from pathlib import Path
+
+SAVE = Path(__file__).resolve().with_name("motel-save.json")
+LEVELS = ("Budget", "Renovated", "Luxury")
+RATES = (65, 110, 170)
+GUESTS = (
+    ("Road tripper", 0, None),
+    ("Birdwatcher", 0, None),
+    ("Traveling magician", 0, "pests"),
+    ("Midnight podcaster", 0, "incident"),
+    ("Business traveler", 1, None),
+    ("Honeymooners", 2, None),
+)
+
+
+class Motel:
+    def __init__(self):
+        self.day = 1
+        self.cash = 230
+        self.reputation = 40
+        self.hours = 8
+        self.ad_headline = None
+        self.resort = False
+        self.rooms = [
+            {"level": 0, "issue": issue, "guest": None}
+            for issue in (None, "dirty", "broken", None)
+        ]
+        self.arrivals = [
+            self.guest(GUESTS[0], True),
+            self.guest(GUESTS[2], False),
+            self.guest(GUESTS[3], True),
+        ]
+
+    @staticmethod
+    def guest(profile, reserved):
+        name, minimum, event = profile
+        return {"name": name, "minimum": minimum, "event": event, "reserved": reserved}
+
+    def status(self):
+        rating = "  |  Luxury Resort" if self.resort else ""
+        print(f"\nDay {self.day}  |  ${self.cash}  |  Reputation {self.reputation}/100"
+              f"  |  {self.hours} work hours{rating}")
+        for number, room in enumerate(self.rooms, 1):
+            guest = room["guest"]
+            condition = guest["name"] if guest else room["issue"] or "ready"
+            print(f"  Room {number}  {LEVELS[room['level']]} · {condition}")
+        if self.ad_headline:
+            print(f'Tomorrow’s ad: "{self.ad_headline}"')
+        print("Arrivals")
+        if not self.arrivals:
+            print("  No guests waiting.")
+        for number, guest in enumerate(self.arrivals, 1):
+            booking = "reservation" if guest["reserved"] else "walk-in"
+            print(f"  {number}. {guest['name']} · {booking} · {LEVELS[guest['minimum']]} or better")
+
+    @staticmethod
+    def pick(items, number):
+        index = int(number) - 1
+        if not 0 <= index < len(items):
+            raise ValueError("That number is out of range.")
+        return items[index]
+
+    def spend(self, hours, cash=0):
+        if self.hours < hours:
+            raise ValueError("There aren't enough work hours left today.")
+        if self.cash < cash:
+            raise ValueError("There isn't enough cash for that job.")
+        self.hours -= hours
+        self.cash -= cash
+
+    def check_in(self, arrival, room_number):
+        guest = self.pick(self.arrivals, arrival)
+        room = self.pick(self.rooms, room_number)
+        if room["guest"] or room["issue"]:
+            raise ValueError("This room must be vacant and ready.")
+        if room["level"] < guest["minimum"]:
+            raise ValueError("This guest booked a higher room tier.")
+        self.spend(1)
+        room["guest"] = guest
+        self.arrivals.remove(guest)
+        print(f"{guest['name']} checked in. Tonight's rate is ${RATES[room['level']]}.")
+
+    def service(self, action, room_number):
+        room = self.pick(self.rooms, room_number)
+        if room["guest"]:
+            raise ValueError("Service is available after checkout.")
+        jobs = {
+            "clean": ("dirty", 1, 0, None),
+            "repair": ("broken", 2, 35, "dirty"),
+            "pest": ("pests", 2, 25, "dirty"),
+            "investigate": ("incident", 2, 0, "dirty"),
+        }
+        if action == "upgrade":
+            if room["issue"] or room["level"] == 2:
+                raise ValueError("Upgrades require a ready room below luxury tier.")
+            self.spend(2, (180, 320)[room["level"]])
+            room["level"] += 1
+            print(f"Room {room_number} is now {LEVELS[room['level']]}.")
+            return
+        required, hours, cost, result = jobs[action]
+        if room["issue"] != required:
+            raise ValueError(f"This job requires a room marked {required}.")
+        self.spend(hours, cost)
+        room["issue"] = result
+        if action == "investigate":
+            print("The deputy cleared the scene. You log the lost keycard and"
+                  " the guest's statement before releasing the room for cleaning.")
+        else:
+            print(f"Room {room_number} is {result or 'ready'}.")
+
+    def advertise(self, copy):
+        copy = copy.strip()
+        if not copy:
+            raise ValueError("Enter a headline for your ad.")
+        if self.ad_headline:
+            raise ValueError("A campaign is already booked for tomorrow.")
+        self.spend(1, 45)
+        self.ad_headline = copy
+        print(f'Ad booked for tomorrow: "{copy}"')
+
+    def close(self):
+        revenue = 0
+        reputation_change = -4 * sum(guest["reserved"] for guest in self.arrivals)
+        for number, room in enumerate(self.rooms, 1):
+            guest = room["guest"]
+            if not guest:
+                continue
+            revenue += RATES[room["level"]]
+            reputation_change += 4 + room["level"]
+            room["guest"] = None
+            room["issue"] = guest["event"] or ("broken" if random.random() < 0.12 else "dirty")
+            print(f"Room {number} checked out · {room['issue']}.")
+        upkeep = min(35, self.cash + revenue)
+        self.cash += revenue - upkeep
+        self.reputation = min(100, max(0, self.reputation + reputation_change))
+        print(f"Room revenue ${revenue} · upkeep ${upkeep} · reputation {self.reputation}/100.")
+        if not self.resort and self.reputation >= 85 and all(room["level"] == 2 for room in self.rooms):
+            self.resort = True
+            print("Your property earned its Luxury Resort rating. You can keep managing it.")
+        self.day += 1
+        self.hours = 8
+        highest_tier = max(room["level"] for room in self.rooms)
+        profiles = [profile for profile in GUESTS if profile[1] <= highest_tier]
+        demand = 3 + (self.reputation >= 65)
+        self.arrivals = [
+            self.guest(random.choice(profiles), index == 0)
+            for index in range(demand)
+        ]
+        if self.ad_headline:
+            self.arrivals.extend(self.guest(random.choice(profiles), False) for _ in range(2))
+            print(f'Your ad "{self.ad_headline}" brought in two walk-ins.')
+        self.ad_headline = None
+
+    def save(self):
+        temporary = SAVE.with_suffix(".tmp")
+        temporary.write_text(json.dumps(vars(self), indent=2), encoding="utf-8")
+        temporary.replace(SAVE)
+        print("Game saved.")
+
+    def run(self):
+        actions = {
+            "status": (0, self.status),
+            "checkin": (2, self.check_in),
+            "ad": (1, self.advertise),
+            "close": (0, self.close),
+            "save": (0, self.save),
+        }
+        print("DESERT LANTERN MOTEL")
+        print("Earn 85 reputation and upgrade all four rooms to Luxury to earn resort status.")
+        self.status()
+        print(HELP)
+        while True:
+            try:
+                line = input("\nmotel> ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                return
+            command, _, rest = line.partition(" ")
+            if not command:
+                continue
+            if command == "quit":
+                return
+            if command == "help":
+                print(HELP)
+                continue
+            try:
+                if command in ("clean", "repair", "pest", "investigate", "upgrade"):
+                    self.service(command, rest.strip())
+                    continue
+                if command not in actions:
+                    print("Unknown command. Type help for the command list.")
+                    continue
+                count, handler = actions[command]
+                arguments = [rest] if command == "ad" else rest.split()
+                if len(arguments) != count:
+                    print("Wrong number of arguments. Type help for command usage.")
+                    continue
+                handler(*arguments)
+                if command == "close":
+                    self.status()
+            except (ValueError, OSError) as error:
+                print(error)
+
+
+HELP = """Commands
+  status                         Show rooms, reservations, and walk-ins
+  checkin ARRIVAL ROOM           Check a guest in (1 hour)
+  clean ROOM                     Clean a dirty room (1 hour)
+  repair ROOM                    Fix equipment (2 hours, $35)
+  pest ROOM                      Treat an infestation (2 hours, $25)
+  investigate ROOM               Document an incident (2 hours)
+  ad HEADLINE                    Attract two walk-ins tomorrow (1 hour, $45)
+  upgrade ROOM                   Renovate for $180 or go luxury for $320 (2 hours)
+  close                          Check guests out and start the next day
+  save                           Save this motel
+  help                           Show commands
+  quit                           Exit the game"""
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Run the Desert Lantern Motel.")
+    parser.add_argument("--new", action="store_true", help="Start fresh without loading the save.")
+    args = parser.parse_args()
+    motel = Motel()
+    if not args.new and SAVE.exists():
+        try:
+            motel.__dict__.update(json.loads(SAVE.read_text(encoding="utf-8")))
+        except (OSError, ValueError, TypeError) as error:
+            parser.exit(1, f"Could not load the save: {error}\n")
+    motel.run()
+
+
+if __name__ == "__main__":
+    main()
