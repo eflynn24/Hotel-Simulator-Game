@@ -56,6 +56,9 @@ namespace DesertLantern
 
         private void WorkReception()
         {
+            for (int index = 0; index < ReservationCount; index++)
+                if (ReservationPending(index))
+                    AcceptReservation(index, ReservationStart(index));
             int checkout;
             while ((checkout = CheckoutWaiting()) >= 0)
                 CompleteCheckout(checkout, true);

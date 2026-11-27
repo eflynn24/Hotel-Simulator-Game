@@ -5,8 +5,10 @@ namespace DesertLantern
 {
     internal sealed partial class MotelWorld
     {
-        public static readonly Vector3 ComputerApproach = new Vector3(-10.22f, 0, 6.62f);
-        public static readonly Vector3 ComputerScreen = new Vector3(-10.28f, 1.61f, 7.24f);
+        public static readonly Vector3 ComputerApproach = new Vector3(-10.22f, 0, 8.24f);
+        public static readonly Vector3 DeskFrontCorner = new Vector3(-11.30f, 0, 6.72f);
+        public static readonly Vector3 DeskBackCorner = new Vector3(-11.30f, 0, 8.24f);
+        public static readonly Vector3 ComputerScreen = new Vector3(-10.28f, 1.61f, 7.70f);
         public Transform ReceptionComputer { get; private set; }
         public static Vector3 RoomDoor(int room) => new Vector3(RoomX[room], FloorHeight(room), 6.43f);
         public static Vector3 BagDrop(int room) => new Vector3(RoomX[room] + .48f, FloorHeight(room), 10.69f);
@@ -412,13 +414,15 @@ namespace DesertLantern
             screen.SetColor("_EmissionColor", new Color(.09f, .10f, .22f));
             Piece(ReceptionComputer, "Glowing monitor glass", new Vector3(0, .382f, -.205f),
                 new Vector3(.429f, .265f, .021f), screen);
-            Sign("Motel Manager\nReservations\nGuests · Supplies\nStaff", ReceptionComputer.position + new Vector3(0, .385f, -.219f), .062f,
+            TextMesh display = Sign("Motel Manager\nReservations\nGuests · Supplies\nStaff", ReceptionComputer.position + new Vector3(0, .385f, -.219f), .062f,
                 new Color32(195, 255, 208, 255));
+            display.transform.SetParent(ReceptionComputer, true);
             Piece(ReceptionComputer, "Keyboard", new Vector3(0, .023f, -.31f),
                 new Vector3(.505f, .046f, .243f), dark);
             for (int row = 0; row < 4; row++)
                 Piece(ReceptionComputer, "Keyboard key row", new Vector3(0, .054f, -.393f + row * .047f),
                     new Vector3(.434f, .014f, .023f), trim);
+            ReceptionComputer.Rotate(0, 180, 0);
         }
 
         private void GableRoof(string name, float x, float y, float z, float width, float depth, float rise, bool acrossFront)

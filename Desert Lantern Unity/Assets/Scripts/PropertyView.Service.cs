@@ -85,8 +85,8 @@ namespace DesertLantern
                 bellhopRoute.Clear();
             }
 
-            int nextVisitor = NoRoom;
-            if (visitorRoom != NoRoom && service.RequestOpen(visitorRoom))
+            int nextVisitor = service.CheckoutWaiting();
+            if (nextVisitor == NoRoom && visitorRoom != NoRoom && service.RequestOpen(visitorRoom))
                 nextVisitor = visitorRoom;
             if (nextVisitor == NoRoom)
                 for (int room = 1; room < Guests.Length; room += 2)
@@ -264,9 +264,11 @@ namespace DesertLantern
         private bool VisitorAtDesk => serviceVisitor != null &&
             MotelWalker.Distance(serviceVisitor.Position, ServiceQueue) < .55f;
 
+        private bool CheckoutVisitor => visitorRoom != NoRoom && visitorRoom == Service.CheckoutWaiting();
+
         private int GuestToServe(Vector3 point)
         {
-            if (visitorRoom != NoRoom && VisitorAtDesk && Service.RequestOpen(visitorRoom) &&
+            if (visitorRoom != NoRoom && !CheckoutVisitor && VisitorAtDesk && Service.RequestOpen(visitorRoom) &&
                 MotelWalker.Distance(point, ServiceQueue) < 1.30f)
                 return visitorRoom;
             int room = MotelWorld.InteriorRoom(point);
@@ -321,10 +323,11 @@ namespace DesertLantern
                 else
                     SetDestination(MotelWorld.PhoneApproach);
             }
-            if (VisitorAtDesk && (Service.KnownRequests & (1 << visitorRoom)) == 0 &&
-                DrawWorldButton(ServiceQueue + Vector3.up * 1.82f, "Talk to guest", 150 * scale, scale))
+            if (VisitorAtDesk && (CheckoutVisitor || (Service.KnownRequests & (1 << visitorRoom)) == 0) &&
+                DrawWorldButton(ServiceQueue + Vector3.up * 1.82f,
+                    CheckoutVisitor ? $"Room {visitorRoom + 1} · Ready to check out" : "Talk to guest", 150 * scale, scale))
             {
-                if (MotelWalker.Distance(caretaker.Position, ServiceQueue) < 1.30f)
+                if (CheckoutVisitor || MotelWalker.Distance(caretaker.Position, ServiceQueue) < 1.30f)
                     RequestReception();
                 else
                     SetDestination(ServiceQueue + Vector3.left * .62f);
@@ -334,10 +337,11 @@ namespace DesertLantern
         private string GuestServiceObjective()
         {
             if (Service.PhoneRinging)
-                return AtPhone(caretaker.Position) ? "E  ·  Answer the phone" : "The reception phone is ringing";
+                return AtPhone(caretaker.Position) ? "E  ·  Answer the phone" :
+                    Service.BookingCallRinging ? "Incoming reservation call · Reception phone" : "Incoming guest call · Reception phone";
             if (GuestToServe(caretaker.Position) != NoRoom)
                 return $"E  ·  {Service.RequestLabel(GuestToServe(caretaker.Position))}";
-            return VisitorAtDesk && (Service.KnownRequests & (1 << visitorRoom)) == 0
+            return VisitorAtDesk && !CheckoutVisitor && (Service.KnownRequests & (1 << visitorRoom)) == 0
                 ? "A guest is waiting to ask for supplies" : null;
         }
 
@@ -464,7 +468,7 @@ namespace DesertLantern
 
         private void HandleReception(ulong worker, Vector3 position, System.Collections.Generic.Queue<Vector3> route)
         {
-            bool talkingToVisitor = VisitorAtDesk && MotelWalker.Distance(position, ServiceQueue) < 1.30f;
+            bool talkingToVisitor = VisitorAtDesk && !CheckoutVisitor && MotelWalker.Distance(position, ServiceQueue) < 1.30f;
             bool handingKey = GuestWaiting && MotelWalker.Distance(position, guest.Position) < 1.4f;
             if (!AtOfficePosition(position) && !talkingToVisitor && !handingKey)
                 return;
@@ -475,16 +479,7 @@ namespace DesertLantern
                 Service = service;
                 return;
             }
-            int checkout = service.CheckoutWaiting();
-            if (checkout != NoRoom)
-            {
-                if (service.OutstandingIssue(checkout) == GuestIssue.LateDeparture)
-                    service.ResolveGuestIssue(checkout, GuestIssue.LateDeparture);
-                else
-                    service.CompleteCheckout(checkout, true);
-                Service = service;
-            }
-            else if (handingKey && selectedKeys.TryGetValue(worker, out int key) && key == Occupied &&
+            if (handingKey && deskCheckInApproved && selectedKeys.TryGetValue(worker, out int key) && key == Occupied &&
                 service.ArrivalReady(key) && service.Bag == LuggageStatus.None)
             {
                 selectedKeys.Remove(worker);

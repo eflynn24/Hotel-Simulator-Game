@@ -26,7 +26,7 @@ namespace DesertLantern
         public int Occupied;
         public bool GuestPresent, GuestArriving, VehicleArriving;
         public float ArrivalCarProgress;
-        public bool Escorting;
+        public bool Escorting, DeskCheckInApproved;
         public LanPose Guest;
         public LanPose Bellhop;
         public int VisitorRoom;
@@ -41,6 +41,7 @@ namespace DesertLantern
             serializer.SerializeValue(ref VehicleArriving);
             serializer.SerializeValue(ref ArrivalCarProgress);
             serializer.SerializeValue(ref Escorting);
+            serializer.SerializeValue(ref DeskCheckInApproved);
             Guest.NetworkSerialize(serializer);
             Bellhop.NetworkSerialize(serializer);
             serializer.SerializeValue(ref VisitorRoom);
@@ -50,7 +51,7 @@ namespace DesertLantern
 
         public bool Equals(LanMotel other) => Occupied == other.Occupied && GuestPresent == other.GuestPresent && GuestArriving == other.GuestArriving &&
             VehicleArriving == other.VehicleArriving && ArrivalCarProgress.Equals(other.ArrivalCarProgress) &&
-            Escorting == other.Escorting && Guest.Equals(other.Guest) && Bellhop.Equals(other.Bellhop) &&
+            DeskCheckInApproved == other.DeskCheckInApproved && Escorting == other.Escorting && Guest.Equals(other.Guest) && Bellhop.Equals(other.Bellhop) &&
             VisitorRoom == other.VisitorRoom && Visitor.Equals(other.Visitor) && Service.Equals(other.Service);
     }
 

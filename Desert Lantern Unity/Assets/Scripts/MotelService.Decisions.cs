@@ -81,7 +81,7 @@ namespace DesertLantern
                 {
                     int room = ReservationRoom(index);
                     int arrival = ReservationStart(index);
-                    if (ReservationChannel(index) == BookingChannel.Conference || arrival <= ClockMinute + 30 ||
+                    if (ReservationPending(index) || ReservationChannel(index) == BookingChannel.Conference || arrival <= ClockMinute + 30 ||
                         arrival / MinutesPerDay != day || !RoomAvailable(room, ClockMinute, NextMorningDeparture, index) ||
                         !RoomReadyForDecision(room))
                         continue;

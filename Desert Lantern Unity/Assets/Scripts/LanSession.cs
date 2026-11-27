@@ -114,7 +114,7 @@ namespace DesertLantern
             session.manager = session.gameObject.AddComponent<NetworkManager>();
             session.manager.NetworkConfig = new NetworkConfig
             {
-                ProtocolVersion = 19,
+                ProtocolVersion = 20,
                 EnableSceneManagement = false,
                 ConnectionApproval = true,
                 NetworkTransport = session.transport,

@@ -207,6 +207,7 @@ namespace DesertLantern
             {
                 Occupied = Occupied, Escorting = escorting, GuestPresent = guest != null, GuestArriving = guestArriving,
                 VehicleArriving = vehicleArriving, ArrivalCarProgress = arrivalCarProgress,
+                DeskCheckInApproved = deskCheckInApproved,
                 Guest = guest == null ? default : guest.Pose, Service = Service,
                 Bellhop = bellhop == null ? default : bellhop.Pose,
                 VisitorRoom = visitorRoom, Visitor = serviceVisitor == null ? default : serviceVisitor.Pose
@@ -251,6 +252,7 @@ namespace DesertLantern
             Occupied = shared.Occupied;
             Service = shared.Service;
             escorting = shared.Escorting;
+            deskCheckInApproved = shared.DeskCheckInApproved;
             if (guestArriving && !shared.GuestArriving)
                 guestWaitStart = Service.ClockMinute;
             guestArriving = shared.GuestArriving;
@@ -322,6 +324,8 @@ namespace DesertLantern
             else if (action == PurchaseAction && Finite(position.x) &&
                 position.x >= 0 && position.x < MotelService.Catalog.Length)
                 TryPurchase((int)position.x, peer.Walker.Position);
+            else if (action == DeskCheckInAction || action == DeskCheckOutAction || action == ConfirmReservationAction)
+                HandleDeskAction(action, position, peer.Walker.Position);
             else if ((action == BookRoomAction || action == EditBookingAction) &&
                 Mathf.Abs(position.x) <= Guests.Length && Mathf.Abs(position.y) <= 31 && Mathf.Abs(position.z) <= int.MaxValue / 2 &&
                 position.x == Mathf.Floor(position.x) && position.y == Mathf.Floor(position.y) && position.z == Mathf.Floor(position.z))

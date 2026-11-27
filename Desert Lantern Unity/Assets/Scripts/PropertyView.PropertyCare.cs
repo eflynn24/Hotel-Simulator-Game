@@ -86,7 +86,8 @@ namespace DesertLantern
                 service.BuyMaintenanceStock(operation == 4);
             else if (AtComputer(position) && (operation == 5 || operation == 6))
                 service.ManageFinances(operation - 5);
-            else if (operation == 7 && InsideOffice(position) && MotelWalker.Distance(position, MotelWorld.CartStation) < .85f)
+            else if (operation == 7 && MotelWorld.NearFloor(position, MotelWorld.CartStation) &&
+                MotelWalker.Distance(position, MotelWorld.CartStation) < .85f)
                 service.ToggleHousekeepingCart(worker);
             else if (operation == 8 && NearActiveGuest(room, position))
                 service.ResolveGuestIssue(room, (GuestIssue)(int)data.z);

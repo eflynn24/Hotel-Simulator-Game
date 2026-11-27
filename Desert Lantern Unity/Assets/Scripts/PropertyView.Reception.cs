@@ -14,7 +14,7 @@ namespace DesertLantern
 
         private void PickReceptionKey(ulong worker, int room, Vector3 point)
         {
-            if (AtKeyCounter(point) && (Service.UnlockedDoors & (1 << room)) == 0)
+            if (GuestWaiting && deskCheckInApproved && AtKeyCounter(point) && (Service.UnlockedDoors & (1 << room)) == 0)
                 selectedKeys[worker] = room;
         }
 
@@ -23,7 +23,7 @@ namespace DesertLantern
             if (!GuestWaiting || !InsideOffice(caretaker.Position))
                 return;
 
-            if (DrawWorldButton(new Vector3(-9.43f, 1.99f, 8.39f), "Room keys", 90 * scale, scale))
+            if (deskCheckInApproved && DrawWorldButton(new Vector3(-9.43f, 1.99f, 8.39f), "Room keys", 90 * scale, scale))
             {
                 if (AtKeyCounter(caretaker.Position))
                     SetReceptionPanel(ReceptionPanel.Keys);
@@ -184,7 +184,7 @@ namespace DesertLantern
                 : receptionPanel == ReceptionPanel.Keys ? "Room keys"
                 : receptionPanel == ReceptionPanel.Maintenance ? "Maintenance"
                 : receptionPanel == ReceptionPanel.Portfolio ? "Management phone" : GuestNames[inspectedGuest];
-            GUI.Label(new Rect(left, panel.y + 12 * scale, width, 49 * scale), heading, title);
+            DrawFittedText(new Rect(left, panel.y + 12 * scale, width, 49 * scale), heading, title);
             var area = new Rect(left, panel.y + 68 * scale, width, 292 * scale);
             if (receptionPanel == ReceptionPanel.Notebook)
                 DrawNotebook(area, scale);
@@ -205,7 +205,7 @@ namespace DesertLantern
         private void DrawKeyRack(Rect area, float scale)
         {
             float width = area.width / 4;
-            GUI.Label(new Rect(area.x, area.y, area.width, 40 * scale),
+            DrawFittedText(new Rect(area.x, area.y, area.width, 40 * scale),
                 $"Pick up the key for Room {Occupied + 1}", detail);
             for (int room = 0; room < Guests.Length; room++)
             {
@@ -231,14 +231,15 @@ namespace DesertLantern
             MotelService service = Service;
             if (service.CanBookPhoneFor(LocalWorker))
             {
-                GUI.Label(new Rect(area.x, area.y, area.width, 27 * scale), "Caller wants to book a room", detail);
+                DrawFittedText(new Rect(area.x, area.y, area.width, 27 * scale), "Caller wants to book a room", detail);
                 DrawBookingForm(new Rect(area.x, area.y + 34 * scale, area.width, 65 * scale), scale, true);
             }
             else
             {
                 string status = service.CanBookPhone ? "A coworker is handling the booking call." :
-                    service.PhoneRinging ? "Incoming call" : "No caller on the line";
-                GUI.Label(new Rect(area.x, area.y, area.width, 27 * scale), status, label);
+                    service.BookingCallRinging ? "Incoming reservation call" : service.PhoneRinging ? "Incoming guest call" :
+                    bookingFeedback == "Phone request sent to Reservations" ? bookingFeedback : "No caller on the line";
+                DrawFittedText(new Rect(area.x, area.y, area.width, 27 * scale), status, label);
                 if (service.PhoneRinging && DrawButton(new Rect(area.x, area.y + 34 * scale, area.width, 30 * scale), "Answer call"))
                     RequestGuestAction(AnswerPhoneAction);
                 if (service.CanReturnBookingCall &&
@@ -255,30 +256,30 @@ namespace DesertLantern
                 computerTab = 0;
                 SetComputerVisible(true);
             }
-            GUI.Label(new Rect(area.x, area.y + 165 * scale, area.width, 26 * scale), $"Missed calls · {service.MissedCalls}", detail);
+            DrawFittedText(new Rect(area.x, area.y + 165 * scale, area.width, 26 * scale), $"Missed calls · {service.MissedCalls}", detail);
             for (int row = 0; row < Mathf.Min(4, service.MissedHistoryCount); row++)
-                GUI.Label(new Rect(area.x, area.y + (192 + row * 24) * scale, area.width, 24 * scale),
+                DrawFittedText(new Rect(area.x, area.y + (192 + row * 24) * scale, area.width, 24 * scale),
                     MotelService.DisplayTime(service.MissedCallTime(service.MissedHistoryCount - 1 - row)), label);
         }
 
         private void DrawGuestMenu(Rect area, float scale)
         {
             MotelService service = Service;
-            GUI.Label(new Rect(area.x, area.y, area.width, 30 * scale), $"Room {inspectedGuest + 1}", detail);
-            GUI.Label(new Rect(area.x, area.y + 152 * scale, area.width, 28 * scale),
+            DrawFittedText(new Rect(area.x, area.y, area.width, 30 * scale), $"Room {inspectedGuest + 1}", detail);
+            DrawFittedText(new Rect(area.x, area.y + 152 * scale, area.width, 28 * scale),
                 $"{service.Personality(inspectedGuest)} · {service.GuestSatisfaction(inspectedGuest)}", label);
-            GUI.Label(new Rect(area.x, area.y + 250 * scale, area.width, 26 * scale),
+            DrawFittedText(new Rect(area.x, area.y + 250 * scale, area.width, 26 * scale),
                 $"Expected quality {service.Expectations(inspectedGuest)}% · Room quality {service.RoomQuality(inspectedGuest)}%", label);
             if (service.ReturningGuest(inspectedGuest))
-                GUI.Label(new Rect(area.x, area.y + 274 * scale, area.width, 25 * scale), service.GuestMemory(inspectedGuest), label);
+                DrawFittedText(new Rect(area.x, area.y + 274 * scale, area.width, 25 * scale), service.GuestMemory(inspectedGuest), label);
             bool open = service.RequestOpen(inspectedGuest);
             string status = open ? $"{service.RequestLabel(inspectedGuest)} · Waiting {service.RequestWait(inspectedGuest)} min"
                 : service.RequestSatisfied(inspectedGuest) ? "Request completed" : "No outstanding request";
-            GUI.Label(new Rect(area.x, area.y + 35 * scale, area.width, 32 * scale), status, label);
+            DrawFittedText(new Rect(area.x, area.y + 35 * scale, area.width, 32 * scale), status, label);
             GuestIssue issue = service.OutstandingIssue(inspectedGuest);
             if (issue != GuestIssue.None)
             {
-                GUI.Label(new Rect(area.x, area.y + 184 * scale, area.width, 26 * scale), IssueLabel(issue), label);
+                DrawFittedText(new Rect(area.x, area.y + 184 * scale, area.width, 26 * scale), IssueLabel(issue), label);
                 if (DrawButton(new Rect(area.x, area.y + 215 * scale, area.width, 32 * scale), IssueActionLabel(issue)))
                     RequestPropertyCare(8, inspectedGuest, (Fixture)issue);
             }
@@ -364,7 +365,7 @@ namespace DesertLantern
             {
                 var entry = rows[row];
                 float y = row * 31 * scale;
-                GUI.Label(new Rect(0, y, width - (entry.Room == NoRoom ? 0 : 62 * scale), 30 * scale), entry.Caption, label);
+                DrawFittedText(new Rect(0, y, width - (entry.Room == NoRoom ? 0 : 62 * scale), 30 * scale), entry.Caption, label);
                 if (entry.Room != NoRoom && DrawButton(new Rect(width - 60 * scale, y, 60 * scale, 28 * scale),
                     pinnedRoom == entry.Room ? "Unpin" : "Pin"))
                 {

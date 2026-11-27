@@ -51,6 +51,8 @@ public static partial class CoreGameplayChecks
     {
         assertions = 0;
         Reservations();
+        OnlineApproval();
+        DeskCheckout();
         Phone();
         Requests();
         Supplies();
@@ -108,8 +110,49 @@ public static partial class CoreGameplayChecks
             "fully booked date block rejects all overlapping requests");
     }
 
+    private static void OnlineApproval()
+    {
+        object service = NewMotel();
+        Call(service, "AdvanceClock", 1440);
+        int start = (int)Call(service, "ReservationStart", 0);
+        int room = (int)Call(service, "ReservationRoom", 0);
+        Check(Yes(service, "ReservationPending", 0) && (int)Call(service, "ReservationRate", 0) == 65,
+            "incoming online booking awaits approval and preserves its rate");
+        Call(service, "AdvanceClock", start);
+        Check(!Yes(service, "BookingDue", room), "unapproved reservation cannot spawn a guest");
+        Check(Yes(service, "AcceptReservation", 0, start) && Yes(service, "BookingDue", room) &&
+            !Yes(service, "AcceptReservation", 0, start), "accepted reservation can spawn once its scheduled time arrives");
+    }
+
+    private static void DeskCheckout()
+    {
+        object service = NewMotel();
+        Check(CheckInReserved(service, 0, 720, 720), "desk checkout fixture");
+        int departure = (int)Call(service, "DepartureMinute", 0);
+        int guestId = (int)Call(service, "GuestId", 0);
+        Check(!Yes(service, "TryDeskCheckout", 0, (float)departure, (float)guestId),
+            "a checkout before the scheduled departure is rejected");
+        Set(service, "ClockMinute", departure);
+        Check(!Yes(service, "TryDeskCheckout", 0, (float)departure, (float)(guestId + 1)),
+            "a checkout for an earlier guest cannot settle the current stay");
+        Check(Yes(service, "TryDeskCheckout", 0, (float)departure, (float)guestId) &&
+            !Yes(service, "TryDeskCheckout", 0, (float)departure, (float)guestId) &&
+            !Yes(service, "RoomReadyForGuest", 0), "desk checkout settles once and creates housekeeping work");
+    }
+
     private static void Phone()
     {
+        object request = NewMotel();
+        Call(request, "AdvanceClock", Number(request, "NextPhoneCall"));
+        Check(Yes(request, "TryAnswerPhone", 1ul), "bookings desk receives the reservation call");
+        Check(!Yes(request, "QueuePhoneReservation", 0, 960, 2400, EnumValue("BookingPreference", "None"), 2ul) &&
+            Yes(request, "QueuePhoneReservation", 0, 960, 2400, EnumValue("BookingPreference", "None"), 1ul) &&
+            (int)Property(request, "PendingReservationCount") == 1 &&
+            Call(request, "ReservationChannel", 0).ToString() == "Telephone", "phone request enters the shared confirmation queue once");
+        Call(request, "AdvanceClock", 960);
+        Check((int)Call(request, "NextArrival") == -1 && Yes(request, "AcceptReservation", 0, 960) &&
+            (int)Call(request, "NextArrival") == 0, "phone guest arrives only after confirmation");
+
         object service = NewMotel();
         int call = Number(service, "NextPhoneCall");
         Call(service, "AdvanceClock", call);
@@ -371,5 +414,33 @@ public static partial class CoreGameplayChecks
         routeMethod.Invoke(null, new object[] { route, reception, assigned });
         Check(route.Contains((Vector3)world.GetField("StairTop").GetValue(null)) && route.Last() == assigned,
             "reception route reaches assigned upper-floor room using stairs");
+        Vector3 computer = (Vector3)world.GetField("ComputerApproach").GetValue(null);
+        Vector3 front = (Vector3)world.GetField("DeskFrontCorner").GetValue(null);
+        Vector3 back = (Vector3)world.GetField("DeskBackCorner").GetValue(null);
+        routeMethod.Invoke(null, new object[] { route, reception, computer });
+        Check(route.SequenceEqual(new[] { front, back, computer }), "computer route goes around the desk");
+        routeMethod.Invoke(null, new object[] { route, computer, reception });
+        Check(route.SequenceEqual(new[] { back, front, reception }), "desk exit follows the clear side aisle");
+        var scene = new GameObject("Reception route test");
+        object walker = null;
+        try
+        {
+            Activator.CreateInstance(world, scene.transform, false);
+            walker = Activator.CreateInstance(Type("MotelWalker"), scene.transform, "Caretaker", reception);
+            Physics.SyncTransforms();
+            routeMethod.Invoke(null, new object[] { route, reception, computer });
+            var drive = view.GetMethod("Drive", BindingFlags.Static | BindingFlags.NonPublic);
+            for (int step = 0; step < 480 && route.Count > 0; step++)
+                drive.Invoke(null, new object[] { walker, route, Vector3.zero, false, 1f / 60f });
+            Vector3 position = (Vector3)Property(walker, "Position");
+            Check(Vector2.Distance(new Vector2(position.x, position.z), new Vector2(computer.x, computer.z)) < .25f,
+                $"reception aisle has physical clearance for the player, reached {position}");
+        }
+        finally
+        {
+            if (walker != null)
+                Call(walker, "Dispose");
+            UnityEngine.Object.DestroyImmediate(scene);
+        }
     }
 }

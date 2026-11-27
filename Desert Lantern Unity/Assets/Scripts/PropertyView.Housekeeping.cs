@@ -15,7 +15,8 @@ namespace DesertLantern
             { "Bag the trash", "Wipe the table", "Vacuum the carpet", "Strip the beds", "Make the beds", "Mop the hard floor", "Disinfect the bathroom", "Collect used towels" };
 
         private static bool NearLaundry(Vector3 point) =>
-            InsideOffice(point) && MotelWalker.Distance(point, MotelWorld.LaundryApproach) < .66f;
+            MotelWorld.NearFloor(point, MotelWorld.LaundryApproach) &&
+            MotelWalker.Distance(point, MotelWorld.LaundryApproach) < .66f;
 
         private void HandleCleaning(ulong worker, int room, CleaningTask task, Vector3 position)
         {
@@ -144,7 +145,8 @@ namespace DesertLantern
             housekeepingPanel = default;
             MotelService service = Service;
             int inside = MotelWorld.InteriorRoom(caretaker.Position);
-            if (InsideOffice(caretaker.Position) && (!service.CartInUse || service.CartCarrier == LocalWorker) &&
+            bool nearStation = MotelWalker.Distance(caretaker.Position, MotelWorld.CartStation) < 7f;
+            if (nearStation && (!service.CartInUse || service.CartCarrier == LocalWorker) &&
                 DrawWorldButton(MotelWorld.CartStation + Vector3.up * .93f,
                     service.CartInUse ? "Return housekeeping cart" : "Load housekeeping cart", 178 * scale, scale))
             {
@@ -153,7 +155,7 @@ namespace DesertLantern
                 else
                     SetDestination(MotelWorld.CartStation);
             }
-            if (InsideOffice(caretaker.Position) && (service.LaundryRunning || service.DirtyLinens + service.DirtyTowels > 0) &&
+            if (nearStation && (service.LaundryRunning || service.DirtyLinens + service.DirtyTowels > 0) &&
                 DrawWorldButton(MotelWorld.LaundryApproach + Vector3.up * 1.43f, "Laundry", 104 * scale, scale))
             {
                 if (NearLaundry(caretaker.Position))

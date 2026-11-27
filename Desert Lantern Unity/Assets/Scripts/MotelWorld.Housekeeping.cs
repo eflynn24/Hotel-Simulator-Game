@@ -4,11 +4,11 @@ namespace DesertLantern
 {
     internal sealed partial class MotelWorld
     {
-        public static readonly Vector3 LaundryApproach = new Vector3(-10.78f, 0, 5.28f);
+        public static readonly Vector3 LaundryApproach = new Vector3(-13.05f, 0, 5.25f);
         private readonly GameObject[,] roomMess = new GameObject[MotelService.RoomCount, MotelService.CleaningTaskCount];
         private readonly TextMesh[] doorNotices = new TextMesh[MotelService.RoomCount];
         private readonly GameObject[] lostProperty = new GameObject[MotelService.RoomCount];
-        public static readonly Vector3 CartStation = new Vector3(-10.87f, 0, 6.22f);
+        public static readonly Vector3 CartStation = new Vector3(-13.05f, 0, 6.50f);
         private Transform housekeepingCart;
         private TextMesh laundryStatus;
         private TextMesh laundryStock;
@@ -109,19 +109,21 @@ namespace DesertLantern
 
         private void BuildLaundry()
         {
-            Vector3 washer = new Vector3(-11.55f, .53f, 5.28f);
+            Box("Housekeeping station pad", new Vector3(-13.52f, -.052f, 5.62f),
+                new Vector3(2.15f, .10f, 2.93f), trim, GroundLayer);
+            Vector3 washer = new Vector3(-13.82f, .53f, 5.28f);
             Box("Washing machine cabinet", washer, new Vector3(.70f, 1.06f, .89f), trim, SolidLayer);
             Box("Washer controls", washer + new Vector3(.353f, .39f, 0),
                 new Vector3(.025f, .135f, .78f), dark);
             var door = Cylinder("Washer glass door", washer + new Vector3(.356f, -.03f, 0),
                 new Vector3(.26f, .038f, .26f), window);
             door.transform.rotation = Quaternion.Euler(0, 0, 90);
-            Box("Laundry hamper", new Vector3(-11.55f, .30f, 6.21f),
+            Box("Laundry hamper", new Vector3(-13.82f, .30f, 5.97f),
                 new Vector3(.62f, .60f, .69f), oak, SolidLayer);
-            Sign("LAUNDRY", new Vector3(-11.5f, 1.40f, 4.79f), .18f, Color.white);
-            laundryStatus = Sign("Ready", new Vector3(-11.5f, 1.23f, 4.79f), .13f, Color.white);
-            laundryStock = Sign("Bags 0   Soap 0", new Vector3(-11.50f, 1.08f, 4.79f), .115f, Color.white);
-            storedVacuum = BuildVacuum("Stored vacuum", new Vector3(-11.69f, 0, 4.48f));
+            Sign("LAUNDRY", new Vector3(-13.77f, 1.40f, 4.79f), .18f, Color.white);
+            laundryStatus = Sign("Ready", new Vector3(-13.77f, 1.23f, 4.79f), .13f, Color.white);
+            laundryStock = Sign("Bags 0   Soap 0", new Vector3(-13.77f, 1.08f, 4.79f), .115f, Color.white);
+            storedVacuum = BuildVacuum("Stored vacuum", new Vector3(-13.96f, 0, 4.48f));
             storedVacuum.gameObject.SetActive(false);
 
             housekeepingCart = Node("Housekeeping cart", CartStation);

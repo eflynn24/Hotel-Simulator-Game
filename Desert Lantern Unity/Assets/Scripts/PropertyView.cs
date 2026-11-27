@@ -240,6 +240,7 @@ namespace DesertLantern
                 return;
             Occupied = arrival;
             staffEscort = false;
+            deskCheckInApproved = false;
             guestArrivalMinute = Service.BookingStart(arrival);
             arrivalCarProgress = 0;
             vehicleArriving = true;
@@ -271,7 +272,6 @@ namespace DesertLantern
             }
             ResetGuestProgress();
             guideId = id;
-            guestDeskMinute = Service.ClockMinute;
             route.Clear();
             guestRoute.Clear();
             lastBreadcrumb = position;
@@ -299,7 +299,7 @@ namespace DesertLantern
                 Service = service;
             guest.Dispose();
             guest = null;
-            escorting = staffEscort = false;
+            escorting = staffEscort = deskCheckInApproved = false;
         }
 
         private void ResetGuestProgress()
@@ -357,7 +357,15 @@ namespace DesertLantern
 
             if (!escorting)
             {
-                if (Service.StaffHired(StaffRole.Receptionist) && Service.ClockMinute - guestWaitStart >= 25 &&
+                if (!Service.BookingDue(Occupied) || Service.BookingStart(Occupied) != guestArrivalMinute)
+                {
+                    guest.Dispose();
+                    guest = null;
+                    deskCheckInApproved = false;
+                    selectedKeys.Clear();
+                    return;
+                }
+                if (!deskCheckInApproved && Service.StaffHired(StaffRole.Receptionist) && Service.ClockMinute - guestWaitStart >= 25 &&
                     Service.ArrivalReady(Occupied))
                     StartStaffEscort();
                 else
@@ -431,13 +439,18 @@ namespace DesertLantern
                 OpenGuestMenu(GuestToServe(caretaker.Position));
                 return;
             }
-            if (VisitorAtDesk && MotelWalker.Distance(caretaker.Position, ServiceQueue) < 1.30f &&
+            if (!CheckoutVisitor && VisitorAtDesk && MotelWalker.Distance(caretaker.Position, ServiceQueue) < 1.30f &&
                 (Service.KnownRequests & (1 << visitorRoom)) == 0)
             {
                 RequestReception();
                 return;
             }
-            if (GuestWaiting && AtKeyCounter(caretaker.Position))
+            if (AtComputer(caretaker.Position))
+            {
+                OpenDeskReservations();
+                return;
+            }
+            if (GuestWaiting && deskCheckInApproved && AtKeyCounter(caretaker.Position))
             {
                 SetReceptionPanel(ReceptionPanel.Keys);
                 return;
@@ -447,12 +460,6 @@ namespace DesertLantern
                 RequestReception();
                 return;
             }
-            if (AtComputer(caretaker.Position))
-            {
-                SetComputerVisible(true);
-                return;
-            }
-
             if (AtOffice && (GuestWaiting || Service.CheckoutWaiting() != NoRoom))
             {
                 RequestReception();
@@ -468,6 +475,18 @@ namespace DesertLantern
 
         private void RequestReception()
         {
+            bool handingKey = deskCheckInApproved && GuestWaiting &&
+                MotelWalker.Distance(caretaker.Position, guest.Position) < 1.4f;
+            bool helping = !CheckoutVisitor && VisitorAtDesk && MotelWalker.Distance(caretaker.Position, ServiceQueue) < 1.30f &&
+                (Service.KnownRequests & (1 << visitorRoom)) == 0;
+            if (!helping && !handingKey && (GuestWaiting || Service.CheckoutWaiting() != NoRoom))
+            {
+                if (AtComputer(caretaker.Position))
+                    OpenDeskReservations();
+                else
+                    SetDestination(MotelWorld.ComputerApproach);
+                return;
+            }
             if (lan != null && !lan.IsHost)
                 lan.State?.ActionRpc(ReceptionAction, Vector3.zero);
             else
@@ -504,6 +523,13 @@ namespace DesertLantern
                 route.Enqueue(MotelWorld.RoomApproach(fromRoom));
             }
             Vector3 threshold = MotelWorld.OfficeApproach;
+            bool behindDesk = inside && origin.z >= 7.98f;
+            bool towardDesk = destinationInside && destination.z >= 7.98f;
+            if (behindDesk && !towardDesk)
+            {
+                route.Enqueue(MotelWorld.DeskBackCorner);
+                route.Enqueue(MotelWorld.DeskFrontCorner);
+            }
             if (inside && !destinationInside)
             {
                 route.Enqueue(new Vector3(threshold.x, 0, 4.55f));
@@ -583,6 +609,11 @@ namespace DesertLantern
             {
                 route.Enqueue(MotelWorld.RoomApproach(toRoom));
                 route.Enqueue(MotelWorld.RoomDoor(toRoom) + Vector3.forward * .67f);
+            }
+            if (towardDesk && !behindDesk)
+            {
+                route.Enqueue(MotelWorld.DeskFrontCorner);
+                route.Enqueue(MotelWorld.DeskBackCorner);
             }
             destination.x = Mathf.Clamp(destination.x, -16.2f, 16.2f);
             destination.z = Mathf.Clamp(destination.z, -13.2f, 13.15f);
@@ -772,22 +803,38 @@ namespace DesertLantern
             int room = NearRoom();
             string objective = HousekeepingObjective() ?? GuestServiceObjective() ?? (AtComputer(caretaker.Position) ? "E  ·  Open the reception computer" : ServiceObjective()) ?? SupplyObjective() ?? (escorting
                 ? (room == Occupied ? "Wait at the door for your guest" : $"Escort your guest to Room {Occupied + 1}")
-                : AtOffice && Service.CheckoutWaiting() != NoRoom ? "E  ·  Check out the departing guest"
-                : GuestWaiting && InsideOffice(caretaker.Position) ? $"Select the key for Room {Occupied + 1} and give it to your guest"
+                : AtOffice && Service.CheckoutWaiting() != NoRoom ? "Check out the guest in Reservations"
+                : GuestWaiting && InsideOffice(caretaker.Position) ? deskCheckInApproved
+                    ? $"Give the guest the key for Room {Occupied + 1}" : "Check in the guest in Reservations"
                 : room != NoRoom ? (Service.DoorUnlocked(room) ? $"E  ·  Open or close Room {room + 1}" : $"Room {room + 1} is locked")
                 : GuestWaiting ? "Meet your next guest at the Front Office" : vehicleArriving ? "A reserved guest is arriving by car"
                 : guestArriving && guest != null ? "Guest is walking from the parking lot" : "Waiting for the next reservation");
             float width = Mathf.Min(610 * scale, screen.width - 2 * margin);
             Rect hud = new Rect(margin, screen.height - margin - 61 * scale, width, 61 * scale);
             Fill(hud, Ink);
-            GUI.Label(new Rect(hud.x + 10 * scale, hud.y + 4 * scale, hud.width - 20 * scale, 27 * scale), objective, detail);
-            GUI.Label(new Rect(hud.x + 10 * scale, hud.y + 31 * scale, hud.width - 20 * scale, 25 * scale),
-                $"{MotelService.DisplayTime(Service.ClockMinute)}   ·   Cash ${Service.Cash}   ·   {Service.ActiveRoomCount}/{Guests.Length} occupied", label);
+            DrawFittedText(new Rect(hud.x + 10 * scale, hud.y + 4 * scale, hud.width - 130 * scale, 27 * scale), objective, detail);
+            DrawFittedText(new Rect(hud.x + 10 * scale, hud.y + 31 * scale, hud.width - 120 * scale, 25 * scale),
+                $"{MotelService.DisplayTime(Service.ClockMinute)}   ·   Cash ${Service.Cash}   ·   {Service.ActiveRoomCount}/{Service.RoomCapacity} occupied", label);
             if (DrawButton(new Rect(hud.xMax - 100 * scale, hud.y + 32 * scale, 93 * scale, 24 * scale),
                 $"Time x{Mathf.Max(1, (int)Service.ClockSpeed)}"))
                 CycleClockSpeed();
             DrawServiceAction(hud, scale);
-            if (!hud.Contains(Event.current.mousePosition) && !housekeepingPanel.Contains(Event.current.mousePosition))
+            int pending = Service.PendingReservationCount;
+            var notice = new Rect(hud.x, hud.y - 40 * scale, hud.width, 34 * scale);
+            if (pending > 0)
+            {
+                int first = Service.FirstPendingReservation;
+                string summary = pending == 1 ? $"New {Service.ReservationChannel(first).ToString().ToLowerInvariant()} reservation request"
+                    : $"{pending} reservation requests awaiting confirmation";
+                if (DrawButton(notice, $"{summary} · Reservations"))
+                {
+                    if (AtComputer(caretaker.Position))
+                        OpenDeskReservations();
+                    else
+                        SetDestination(MotelWorld.ComputerApproach);
+                }
+            }
+            if ((pending == 0 || !notice.Contains(Event.current.mousePosition)) && !hud.Contains(Event.current.mousePosition) && !housekeepingPanel.Contains(Event.current.mousePosition))
                 HandleWorldClick();
         }
 
@@ -800,7 +847,10 @@ namespace DesertLantern
             if (projected.x < width / 2 || projected.x > Screen.width - width / 2 ||
                 y < 15 * scale || y > Screen.height - 45 * scale)
                 return false;
-            return DrawButton(new Rect(projected.x - width / 2, y - 16 * scale, width, 32 * scale), text);
+            width = Mathf.Min(Mathf.Max(width, button.CalcSize(new GUIContent(text)).x + 12 * scale),
+                Screen.width - 8 * scale);
+            float x = Mathf.Clamp(projected.x - width / 2, 4 * scale, Screen.width - width - 4 * scale);
+            return DrawButton(new Rect(x, y - 16 * scale, width, 32 * scale), text);
         }
 
         private void OnApplicationPause(bool paused)
@@ -849,10 +899,10 @@ namespace DesertLantern
                 PlayerPrefs.Save();
         }
 
-        private Rect DrawOverlay(Rect screen, float height, float scale)
+        private Rect DrawOverlay(Rect screen, float height, float scale, float preferredWidth = 410)
         {
             Fill(screen, new Color(0, 0, 0, 0.55f));
-            float width = Mathf.Min(410 * scale, screen.width - 32 * scale);
+            float width = Mathf.Min(preferredWidth * scale, screen.width - 32 * scale);
             Rect panel = new Rect((screen.width - width) / 2, (screen.height - height) / 2,
                 width, height);
             Fill(panel, Ink);
@@ -968,9 +1018,33 @@ namespace DesertLantern
         {
             Color previous = GUI.backgroundColor;
             GUI.backgroundColor = Accent;
-            bool clicked = GUI.Button(bounds, text, button);
+            int fontSize = button.fontSize;
+            GUIContent content = new GUIContent(text);
+            FitText(bounds, content, button);
+            bool clicked = GUI.Button(bounds, content, button);
+            button.fontSize = fontSize;
             GUI.backgroundColor = previous;
             return clicked;
+        }
+
+        private static void FitText(Rect bounds, GUIContent content, GUIStyle style)
+        {
+            while (style.fontSize > 6)
+            {
+                Vector2 size = style.CalcSize(content);
+                if (size.x <= bounds.width && size.y <= bounds.height)
+                    break;
+                style.fontSize--;
+            }
+        }
+
+        private static void DrawFittedText(Rect bounds, string text, GUIStyle style)
+        {
+            int fontSize = style.fontSize;
+            GUIContent content = new GUIContent(text);
+            FitText(bounds, content, style);
+            GUI.Label(bounds, content, style);
+            style.fontSize = fontSize;
         }
 
         private static void Fill(Rect bounds, Color color)
