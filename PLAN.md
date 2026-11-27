@@ -27,10 +27,10 @@ the exterior navigation is tested in the editor.
 ## Multiplayer and management roadmap
 
 Implement and verify one milestone at a time. The current milestone is
-the shared motel clock, day/night lighting, scheduled reservations, checkout,
-and reviews. Supply crates now go to shelves inside reception. Prioritize
-the guest stay and requests loop next, then the reception phone, refunds
-and overbooking.
+night lighting, booked stays, visible shelf stock, a reception phone and
+towel requests, and the first employee. The bellhop handles luggage and
+the computer sells TV access and meals. Prioritize room servicing and
+returning vacated rooms to inventory next, then refunds and overbooking.
 Desktop hosts accept browser players over WebSocket, including from the
 local HTTP copy.
 
@@ -60,14 +60,12 @@ local HTTP copy.
 9. **Advanced guest requests** — Extend guest requests to meals, repairs,
    and special services after the basic stay and room-turnover loop works.
 
-### Next playable milestone
+### Guest stay and room turnover
 
-1. Keep checked-in guests present during their stay. Give them routines
-   between their rooms and reception, and let players talk to them at both.
-2. Start with a towel request. A guest can walk to reception and ask for it.
-   Show their request and room on the reception computer. Use existing stock
-   or order the item, collect the delivery, and hand the supplies to the
-   requesting guest.
+1. Checked-in guests can stay in rooms, call reception, or walk to the
+   desk and ask for towels. Players answer the request and serve the guest.
+2. Expand guest routines and requests beyond towels. The computer lists the
+   request and room, and players use existing stock or order a delivery.
 3. Let the guest check out after the request is resolved. Mark that room as
    needing service, and require a player to service it before another
    arrival can use it.

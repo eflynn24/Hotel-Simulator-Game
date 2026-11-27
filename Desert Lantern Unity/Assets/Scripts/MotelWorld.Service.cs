@@ -18,6 +18,108 @@ namespace DesertLantern
         private Transform supplyCrate;
         private BoxCollider supplyCollider;
 
+        public static readonly Vector3 PhoneApproach = new Vector3(-8.98f, 0, 6.72f);
+        public static readonly Vector3 PhonePosition = new Vector3(-8.92f, 1.30f, 7.17f);
+        private readonly List<Light> outdoorLights = new List<Light>();
+        private readonly TextMesh[] supplyCounts = new TextMesh[3];
+        private readonly GameObject[,] stockProps = new GameObject[3, 4];
+        private AudioSource deskPhone;
+        private AudioClip ringClip;
+
+        private readonly GameObject[] tvIndicator = new GameObject[4];
+        private readonly GameObject[] roomServiceTray = new GameObject[4];
+
+        public void ShowPurchasedServices(MotelService service)
+        {
+            for (int room = 0; room < tvIndicator.Length; room++)
+            {
+                int bit = 1 << room;
+                tvIndicator[room].SetActive((service.ActiveRooms & service.TvPackages & bit) != 0);
+                roomServiceTray[room].SetActive((service.ActiveRooms & service.MealOrders & bit) != 0);
+            }
+        }
+
+        private void BuildOutdoorLights()
+        {
+            QualitySettings.pixelLightCount = Mathf.Max(QualitySettings.pixelLightCount, 8);
+            OutdoorLamp(new Vector3(-9.75f, 2.23f, 3.45f), 6.1f);
+            foreach (float x in RoomX)
+                OutdoorLamp(new Vector3(x + .82f, 2.56f, 5.98f), 6.2f);
+            foreach (float x in new[] { -13.85f, 13.10f })
+            {
+                Box("Parking lamp pole", new Vector3(x, 2.18f, -.85f),
+                    new Vector3(.16f, 4.36f, .16f), iron, SolidLayer);
+                OutdoorLamp(new Vector3(x, 4.30f, -.85f), 10f);
+            }
+        }
+
+        private void OutdoorLamp(Vector3 position, float range)
+        {
+            Box("Outdoor lamp shade", position + Vector3.up * .115f,
+                new Vector3(.43f, .14f, .33f), iron);
+            Box("Outdoor lamp glass", position, new Vector3(.33f, .10f, .25f), cream);
+            Light light = Node("Outdoor light", position + Vector3.down * .12f).gameObject.AddComponent<Light>();
+            light.type = LightType.Point;
+            light.color = new Color(1f, .79f, .54f);
+            light.range = range;
+            light.intensity = 0f;
+            light.shadows = LightShadows.None;
+            outdoorLights.Add(light);
+        }
+
+        private void BuildDeskPhone()
+        {
+            Vector3 basePosition = PhonePosition - Vector3.up * .16f;
+            Box("Telephone base", basePosition, new Vector3(.34f, .10f, .24f), dark);
+            Box("Telephone handset", basePosition + new Vector3(0, .085f, .015f),
+                new Vector3(.37f, .08f, .085f), dark);
+            for (int key = 0; key < 9; key++)
+                Box("Phone keypad", basePosition + new Vector3(.055f * (key % 3 - 1), .058f, -.027f - .022f * (key / 3)),
+                    new Vector3(.033f, .012f, .012f), cream);
+        }
+
+        public void ShowDeskPhone(bool ringing)
+        {
+            if (!ringing)
+            {
+                if (deskPhone != null && deskPhone.isPlaying)
+                    deskPhone.Stop();
+                return;
+            }
+            if (deskPhone == null)
+            {
+                deskPhone = Node("Telephone ringer", PhonePosition).gameObject.AddComponent<AudioSource>();
+                deskPhone.spatialBlend = .6f;
+                deskPhone.maxDistance = 20f;
+                deskPhone.volume = .34f;
+                deskPhone.loop = true;
+                const int sampleRate = 22050;
+                var waveform = new float[sampleRate * 3];
+                for (int i = 0; i < waveform.Length; i++)
+                {
+                    float t = (float)i / sampleRate;
+                    float pulse = t < .23f ? t : t - .37f;
+                    if (pulse >= 0 && pulse < .23f)
+                    {
+                        float envelope = Mathf.Clamp01(Mathf.Min(pulse, .23f - pulse) * 140f);
+                        waveform[i] = envelope * .28f *
+                            (Mathf.Sin(t * 440f * 2f * Mathf.PI) + Mathf.Sin(t * 620f * 2f * Mathf.PI));
+                    }
+                }
+                ringClip = AudioClip.Create("Desk telephone ring", waveform.Length, 1, sampleRate, false);
+                ringClip.SetData(waveform, 0);
+                deskPhone.clip = ringClip;
+            }
+            if (!deskPhone.isPlaying)
+                deskPhone.Play();
+        }
+
+        public void DisposeDeskPhone()
+        {
+            if (ringClip != null)
+                Object.Destroy(ringClip);
+        }
+
         private void BuildSupplyDelivery()
         {
             Material carton = Surface(new Color32(170, 121, 71, 255), .75f, 14);
@@ -28,9 +130,22 @@ namespace DesertLantern
             Sign("DELIVERIES", new Vector3(-13.80f, .31f, 1.51f), .15f, Color.white);
             Box("Supply storage back", new Vector3(-7.48f, .92f, 5.55f),
                 new Vector3(.16f, 1.84f, 1.48f), iron, SolidLayer);
+            string[] labels = { "Kits", "Towels", "Linens" };
+            Material[] contents = { carton, linen, runner };
             for (int level = 0; level < 3; level++)
-                Box("Supply shelf", new Vector3(-7.78f, .25f + level * .66f, 5.55f),
+            {
+                float height = .25f + level * .66f;
+                Box("Supply shelf", new Vector3(-7.78f, height, 5.55f),
                     new Vector3(.65f, .095f, 1.50f), oak, SolidLayer);
+                supplyCounts[level] = Sign(labels[level] + " 0", new Vector3(-7.81f, height + .055f, 4.773f),
+                    .125f, Color.white);
+                for (int unit = 0; unit < 4; unit++)
+                {
+                    stockProps[level, unit] = Box(labels[level] + " stock", new Vector3(-7.82f, height + .14f, 4.98f + unit * .34f),
+                        new Vector3(.48f, level == 0 ? .18f : .11f, .27f), contents[level]);
+                    stockProps[level, unit].SetActive(false);
+                }
+            }
             Box("Storage sign board", new Vector3(-7.80f, 1.90f, 4.82f),
                 new Vector3(1.10f, .25f, .08f), dark);
             Sign("SUPPLIES", new Vector3(-7.80f, 1.90f, 4.77f), .17f, Color.white);
@@ -47,6 +162,16 @@ namespace DesertLantern
 
         public void ShowSupplyDelivery(MotelService service, MotelWalker carrier)
         {
+            for (int kind = 0; kind < supplyCounts.Length; kind++)
+            {
+                int count = service.Stock(kind);
+                string name = kind == 0 ? "Kits" : kind == 1 ? "Towels" : "Linens";
+                string text = name + " " + count;
+                if (supplyCounts[kind].text != text)
+                    supplyCounts[kind].text = text;
+                for (int unit = 0; unit < 4; unit++)
+                    stockProps[kind, unit].SetActive(unit < count);
+            }
             bool onPallet = service.Delivery == SupplyDelivery.AtBay;
             bool visible = onPallet || carrier != null;
             supplyCrate.gameObject.SetActive(visible);

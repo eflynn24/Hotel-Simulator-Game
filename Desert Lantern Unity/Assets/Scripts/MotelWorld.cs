@@ -61,7 +61,11 @@ namespace DesertLantern
             BuildPlanting();
             BuildParking(overview);
             if (!overview)
+            {
                 BuildSupplyDelivery();
+                BuildOutdoorLights();
+                BuildDeskPhone();
+            }
         }
 
         private void BuildDesert()
@@ -130,7 +134,7 @@ namespace DesertLantern
             ridge.AddComponent<MeshRenderer>().sharedMaterial = material;
         }
 
-        private void Sign(string text, Vector3 position, float size, Color color)
+        private TextMesh Sign(string text, Vector3 position, float size, Color color)
         {
             var sign = new GameObject(text);
             sign.transform.SetParent(root, false);
@@ -144,6 +148,7 @@ namespace DesertLantern
             mesh.fontSize = 86;
             mesh.characterSize = size * .115f;
             mesh.color = color;
+            return mesh;
         }
 
         private void RefreshSignAtlas(Font rebuilt)
@@ -174,6 +179,8 @@ namespace DesertLantern
             Color sky = Color.Lerp(new Color(.075f, .105f, .19f), new Color(.66f, .71f, .72f), daylight);
             camera.backgroundColor = Color.Lerp(sky, new Color(.81f, .49f, .36f), warm * .55f);
             RenderSettings.fogColor = camera.backgroundColor;
+            foreach (Light light in outdoorLights)
+                light.intensity = (1f - daylight) * 2.9f;
             clockHour.localRotation = Quaternion.Euler(0, 0, -hour * 30f);
             clockMinuteHand.localRotation = Quaternion.Euler(0, 0, -(absoluteMinute % 60) * 6f);
         }

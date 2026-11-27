@@ -130,6 +130,7 @@ namespace DesertLantern
             else
                 UpdateGuest(delta, caretaker?.Position ?? MotelWorld.Spawn);
 
+            UpdateServiceActors(delta);
             if (Time.unscaledTime >= nextSnapshot)
             {
                 nextSnapshot = Time.unscaledTime + SnapshotInterval;
@@ -172,6 +173,8 @@ namespace DesertLantern
                     Physics.IgnoreCollision(actor.Capsule, existing.Walker.Capsule);
                 if (guest != null)
                     Physics.IgnoreCollision(actor.Capsule, guest.Capsule);
+                IgnoreActorCollision(actor, bellhop);
+                IgnoreActorCollision(actor, serviceVisitor);
                 peers.Add(entry.Key, new Peer(actor));
             }
         }
@@ -200,7 +203,9 @@ namespace DesertLantern
             lan.State.Motel.Value = new LanMotel
             {
                 Occupied = Occupied, Escorting = escorting, GuestPresent = guest != null,
-                Guest = guest == null ? default : guest.Pose, Service = Service
+                Guest = guest == null ? default : guest.Pose, Service = Service,
+                Bellhop = bellhop == null ? default : bellhop.Pose,
+                VisitorRoom = visitorRoom, Visitor = serviceVisitor == null ? default : serviceVisitor.Pose
             };
         }
 
@@ -243,6 +248,7 @@ namespace DesertLantern
             Occupied = shared.Occupied;
             Service = shared.Service;
             escorting = shared.Escorting;
+            ApplyServiceActors(shared, delta);
             if (shared.GuestPresent && Occupied < Guests.Length)
             {
                 if (guest == null)
@@ -271,6 +277,11 @@ namespace DesertLantern
             else if (action == ClockSpeedAction && (position.x == 1 || position.x == 2 ||
                 position.x == 4 || position.x == 8))
                 SetClockSpeed((byte)position.x);
+            else if (action == AnswerPhoneAction || action == ServeGuestAction || action == HireBellhopAction)
+                HandleGuestAction(action, 0, peer.Walker.Position);
+            else if (action == SellUpgradeAction && position.x >= 0 && position.x < 2 * Guests.Length &&
+                position.x == Mathf.Floor(position.x))
+                HandleGuestAction(action, (int)position.x, peer.Walker.Position);
             else if (action == SupplyDeliveryAction)
                 HandleSupplyDelivery(id, peer.Walker.Position);
             else if (action == PurchaseAction && Finite(position.x) &&

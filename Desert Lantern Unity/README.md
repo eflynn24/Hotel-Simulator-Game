@@ -13,21 +13,28 @@ This Unity 6 prototype starts over a 3D view of the county. Select
   Follow the luggage prompt to the guest's car, pick up the case with **E**
   and set it down inside the assigned room for a **$10** tip.
 - At the reception counter, press **E** or click the computer to open
-  **Reservations**, **Supplies**, or **Reviews**. Use the reservation time
-  controls to set arrival and departure in 15-minute increments, and confirm
-  the booking. The HUD and reception wall clock share the LAN host's time.
+  **Reservations**, **Booked**, **Guests**, **Staff**, **Supplies**, or
+  **Reviews**. Set arrival and departure in 15-minute increments under
+  **Reservations**. Confirmed stays move to **Booked** with their arrival time. The HUD and reception wall clock share the LAN host's time.
   A full motel day takes four real minutes at normal speed. Click
   **Time x1** in the HUD to cycle through 2x, 4x, and 8x. Time returns to
   normal when a booking is due, checkout opens, or an order arrives. The
   headless host pauses time when no players are connected. Reception
-  handles one waiting guest at a time.
+  handles the reception line one guest at a time. Outdoor lights come on
+  at dusk along the walkway, porch, and parking lot.
 - At departure time, press **E** at reception to check the guest out. Guests
   leave automatically after an hour of motel time. The **Reviews** tab shows
   feedback on check-in, luggage service, and checkout.
 - Order cleaning kits, towels, or linen under **Supplies**. Orders charge
   cash immediately and arrive after 72 motel minutes. Pick up the crate at
   the delivery bay with **E**, then use **E** at the shelves inside reception
-  to add it to stock. One outstanding order is allowed.
+  to add it to stock. The shelves show counts for all three supplies.
+  One outstanding order is allowed.
+- Guests request towels by phone or in person. Answer the ringing desk phone
+  or talk to the guest in reception. Check **Guests** to see their room, then
+  visit the guest and press **E** to give them a towel from stock.
+- Hire a bellhop under **Staff** for $55 to collect and deliver luggage.
+  Use **Guests** to sell TV access or a room-service meal to checked-in rooms.
 - Open or close a nearby room door with **E**. Press **I** near it to check
   occupancy. **Menu** or **Escape** opens the display settings.
   **Back to map** returns to the county view.

@@ -27,6 +27,9 @@ namespace DesertLantern
         public bool GuestPresent;
         public bool Escorting;
         public LanPose Guest;
+        public LanPose Bellhop;
+        public int VisitorRoom;
+        public LanPose Visitor;
         public MotelService Service;
 
         public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
@@ -35,11 +38,15 @@ namespace DesertLantern
             serializer.SerializeValue(ref GuestPresent);
             serializer.SerializeValue(ref Escorting);
             Guest.NetworkSerialize(serializer);
+            Bellhop.NetworkSerialize(serializer);
+            serializer.SerializeValue(ref VisitorRoom);
+            Visitor.NetworkSerialize(serializer);
             Service.NetworkSerialize(serializer);
         }
 
         public bool Equals(LanMotel other) => Occupied == other.Occupied && GuestPresent == other.GuestPresent &&
-            Escorting == other.Escorting && Guest.Equals(other.Guest) && Service.Equals(other.Service);
+            Escorting == other.Escorting && Guest.Equals(other.Guest) && Bellhop.Equals(other.Bellhop) &&
+            VisitorRoom == other.VisitorRoom && Visitor.Equals(other.Visitor) && Service.Equals(other.Service);
     }
 
     internal struct LanPlayer : INetworkSerializable, IEquatable<LanPlayer>
@@ -61,7 +68,7 @@ namespace DesertLantern
     public sealed class LanWorldState : NetworkBehaviour
     {
         internal NetworkList<LanPlayer> Players;
-        internal readonly NetworkVariable<LanMotel> Motel = new NetworkVariable<LanMotel>(new LanMotel { Service = MotelService.New() });
+        internal readonly NetworkVariable<LanMotel> Motel = new NetworkVariable<LanMotel>(new LanMotel { VisitorRoom = -1, Service = MotelService.New() });
 
         private void Awake() => Players = new NetworkList<LanPlayer>();
 

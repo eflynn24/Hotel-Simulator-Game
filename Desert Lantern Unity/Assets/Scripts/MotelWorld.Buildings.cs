@@ -97,6 +97,17 @@ namespace DesertLantern
                 new Vector3(.10f, .60f, 1.05f), dark);
             Box("TV panel", new Vector3(x + 2.235f, 1.70f, 9.13f),
                 new Vector3(.026f, .51f, .94f), window);
+            tvIndicator[room] = Box("Activated television screen", new Vector3(x + 2.211f, 1.70f, 9.13f),
+                new Vector3(.011f, .29f, .47f), teal);
+            roomServiceTray[room] = Node("Room service tray", new Vector3(x + 1.71f, .778f, 7.61f)).gameObject;
+            Piece(roomServiceTray[room].transform, "Meal tray", new Vector3(0, .035f, 0),
+                new Vector3(.47f, .055f, .33f), iron);
+            Piece(roomServiceTray[room].transform, "Covered plate", new Vector3(-.08f, .14f, 0),
+                new Vector3(.28f, .17f, .23f), cream);
+            Piece(roomServiceTray[room].transform, "Drink", new Vector3(.14f, .14f, .01f),
+                new Vector3(.09f, .16f, .09f), teal);
+            tvIndicator[room].SetActive(false);
+            roomServiceTray[room].SetActive(false);
             Cylinder("Round table top", new Vector3(x + 1.71f, .73f, 7.61f), new Vector3(.48f, .044f, .48f), siding, SolidLayer);
             Cylinder("Table pedestal", new Vector3(x + 1.71f, .35f, 7.61f), new Vector3(.08f, .35f, .08f), iron);
             Cylinder("Table foot", new Vector3(x + 1.71f, .035f, 7.61f), new Vector3(.30f, .035f, .30f), iron);

@@ -146,8 +146,8 @@ Both peers saw the room charge raise cash from $230 to $295 and the luggage
 delivery raise it to $305. The host rejected a distant pickup and repeated delivery. A client then
 bought four towels for $18 at the reception computer. Both players saw the
 new $287 balance and four towels in stock. A late joiner received that
-balance, stock, and occupied room. Protocol version 6 includes the clock and shared time speed, booking windows, reviews,
-supply inventory, and delivery ownership, so everyone in a session needs the same build.
+balance, stock, and occupied room. Protocol version 7 includes the clock and shared time speed, bookings, reviews,
+supply inventory, employee movement, and guest requests, so everyone in a session needs the same build.
 
 Two Chromium clients joined the same Linux WebSocket host from the local HTTP
 County Map. Both showed the three connected avatars, movement from one browser
