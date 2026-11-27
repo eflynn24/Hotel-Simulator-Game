@@ -422,6 +422,7 @@ public static partial class CoreGameplayChecks
         routeMethod.Invoke(null, new object[] { route, computer, reception });
         Check(route.SequenceEqual(new[] { back, front, reception }), "desk exit follows the clear side aisle");
         var scene = new GameObject("Reception route test");
+        int pixelLightCount = QualitySettings.pixelLightCount;
         object walker = null;
         try
         {
@@ -445,6 +446,7 @@ public static partial class CoreGameplayChecks
                     graph.Destroy();
             }
             UnityEngine.Object.DestroyImmediate(scene);
+            QualitySettings.pixelLightCount = pixelLightCount;
         }
     }
 }
