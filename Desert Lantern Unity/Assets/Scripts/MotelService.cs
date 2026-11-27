@@ -94,8 +94,6 @@ namespace DesertLantern
             }
             service.InitializePropertyCare();
             service.InitializeManagement();
-            service.Book(1, 14 * 60, MinutesPerDay + 11 * 60, BookingChannel.Online);
-            service.Book(2, 16 * 60, MinutesPerDay + 12 * 60, BookingChannel.Online);
             return service;
         }
 

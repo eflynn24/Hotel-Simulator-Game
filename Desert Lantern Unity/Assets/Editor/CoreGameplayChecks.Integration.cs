@@ -67,7 +67,7 @@ public static partial class CoreGameplayChecks
         object service = NewMotel();
         Check(Book(service, 0, 3000, 4000), "integration: calendar fixture booked");
         Check(!Yes(service, "RoomAvailable", 0, 2880, 4320, -1, false), "integration: calendar date blocked");
-        Call(service, "ModifyBooking", 2, 0);
+        Call(service, "ModifyBooking", 0, 0);
         Check(Yes(service, "RoomAvailable", 0, 2880, 4320, -1, false), "integration: cancellation reopens calendar date");
         Check(CheckInReserved(service, 0, 720, 720), "integration: extension fixture checked in");
         int departure = (int)Call(service, "DepartureMinute", 0);
@@ -118,7 +118,7 @@ public static partial class CoreGameplayChecks
         Check(Yes(service, "ManageProperty", EnumValue("ManagementAction", "PlaceFurniture"), 0, 0),
             "integration: player purchases upgraded bedding");
         Check((int)Call(service, "RoomQuality", 0) > quality && (int)Call(service, "NightlyRate", 0) > rate &&
-            (int)Call(service, "ReservationRate", 2) == rate && Report(service, "Maintenance") < 0,
+            (int)Call(service, "ReservationRate", 0) == rate && Report(service, "Maintenance") < 0,
             "integration: upgrade raises quality and future price while existing quote remains fixed");
     }
 }

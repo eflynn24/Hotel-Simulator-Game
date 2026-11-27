@@ -93,7 +93,7 @@ namespace DesertLantern
         private const byte BookRoomAction = 18;
         private const byte EditBookingAction = 19;
         private int bookingRoom;
-        private int bookingLead = 1;
+        private int bookingLead;
         private int bookingNights = 1;
         private BookingPreference bookingPreference;
         private int calendarOffset;

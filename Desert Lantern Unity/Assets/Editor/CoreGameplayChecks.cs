@@ -66,16 +66,16 @@ public static partial class CoreGameplayChecks
     private static void Reservations()
     {
         object service = NewMotel();
-        Check((int)Property(service, "ReservationCount") == 2, "initial online reservations");
+        Check((int)Property(service, "ReservationCount") == 0, "new motel has no preloaded reservations");
         Check(Book(service, 0, 960, 3840, "Telephone"), "telephone reservation");
         Check(!Book(service, 0, 970, 1550), "reject overlapping dates");
         Check(Book(service, 0, 3840, 4200), "allow adjacent booking");
-        Call(service, "ModifyBooking", 3, 0);
+        Call(service, "ModifyBooking", 1, 0);
         Check(Book(service, 0, 3840, 4200), "cancel makes dates available");
-        Call(service, "ModifyBooking", 3, 5);
-        Check((int)Call(service, "ReservationRoom", 3) == 1 &&
-            (int)Call(service, "ReservationStart", 3) == 3840, "move preserves dates");
-        Check(Call(service, "ReservationChannel", 2).ToString() == "Telephone", "preserve calendar channel");
+        Call(service, "ModifyBooking", 1, 5);
+        Check((int)Call(service, "ReservationRoom", 1) == 1 &&
+            (int)Call(service, "ReservationStart", 1) == 3840, "move preserves dates");
+        Check(Call(service, "ReservationChannel", 0).ToString() == "Telephone", "preserve calendar channel");
         Set(service, "ClockMinute", 959);
         Check(!Yes(service, "BookingDue", 0), "arrival held until start");
         Set(service, "ClockMinute", 960);
@@ -100,7 +100,7 @@ public static partial class CoreGameplayChecks
         Check((int)Call(service, "NextArrival") == -1 && !Book(service, 4, 800, 950), "no assignable room");
         service = NewMotel();
         Call(service, "AdvanceClock", 1440);
-        Check((int)Property(service, "ReservationCount") > 2, "online booking generated on day turnover");
+        Check((int)Property(service, "ReservationCount") > 0, "online booking generated on day turnover");
         service = NewMotel();
         for (int room = 0; room < 8; room++)
             Check(Book(service, room, 3200, 4700), $"room {room + 1} can be booked in the same date block");
@@ -130,8 +130,8 @@ public static partial class CoreGameplayChecks
         Call(service, "ManageStaff", 5, false);
         Call(service, "AdvanceClock", Number(service, "NextPhoneCall"));
         Call(service, "WorkMotelShift", false);
-        Check((int)Property(service, "ReservationCount") == 3 &&
-            Call(service, "ReservationChannel", 2).ToString() == "Telephone", "receptionist creates telephone booking");
+        Check((int)Property(service, "ReservationCount") == 1 &&
+            Call(service, "ReservationChannel", 0).ToString() == "Telephone", "receptionist creates telephone booking");
     }
 
     private static void Requests()
@@ -339,7 +339,7 @@ public static partial class CoreGameplayChecks
             !Yes(service, "CheckInWithStaff", 0, 769, 769), "early reservation cannot spawn or check in");
         Call(service, "AdvanceClock", 770);
         Check((int)Call(service, "NextArrival") == 0, "arrival selected at the scheduled minute");
-        Call(service, "ModifyBooking", 2, 0);
+        Call(service, "ModifyBooking", 0, 0);
         Check((int)Call(service, "NextArrival") == -1, "cancelled booking cannot produce a guest");
 
         object remote = NewMotel();
