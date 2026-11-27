@@ -65,7 +65,7 @@ namespace DesertLantern
 #endif
         internal bool HasPeer(ulong id) => manager.ConnectedClients.ContainsKey(id);
 
-        internal static bool StartLan(bool host, string address, string portText, bool webSocket = false)
+        internal static bool StartLan(bool host, string address, string portText, bool webSocket = false, bool secureWebSocket = false)
         {
             if (Active != null)
                 return false;
@@ -75,7 +75,12 @@ namespace DesertLantern
                 return false;
             }
             string endpoint = address?.Trim();
-            if (!host && (!IPAddress.TryParse(endpoint, out IPAddress ip) ||
+            if (secureWebSocket && (host || !webSocket || Uri.CheckHostName(endpoint) != UriHostNameType.Dns))
+            {
+                Notice = "Enter the DNS name on the host’s TLS certificate.";
+                return false;
+            }
+            if (!host && !secureWebSocket && (!IPAddress.TryParse(endpoint, out IPAddress ip) ||
                 ip.AddressFamily != AddressFamily.InterNetwork || IPAddress.Any.Equals(ip)))
             {
                 Notice = "Enter the host's IPv4 address.";
@@ -97,6 +102,11 @@ namespace DesertLantern
             session.Port = port;
             session.transport = session.gameObject.AddComponent<UnityTransport>();
             session.transport.UseWebSockets = webSocket;
+            if (secureWebSocket)
+            {
+                session.transport.UseEncryption = true;
+                session.transport.SetClientSecrets(endpoint);
+            }
             // A cold browser can take several seconds to load the motel after joining.
             session.transport.DisconnectTimeoutMS = webSocket ? BrowserConnectTimeout * 1000 : 8000;
             session.manager = session.gameObject.AddComponent<NetworkManager>();
@@ -114,7 +124,9 @@ namespace DesertLantern
             session.manager.OnClientConnectedCallback += session.OnConnected;
             session.manager.OnClientDisconnectCallback += session.OnDisconnected;
             session.manager.OnTransportFailure += session.OnTransportFailure;
-            session.transport.SetConnectionData(host ? "127.0.0.1" : endpoint, port, "0.0.0.0");
+            // Unity Transport requires an IP endpoint here. In WebGL, WSS uses the
+            // certificate hostname configured above and lets the browser resolve it.
+            session.transport.SetConnectionData(host || secureWebSocket ? "127.0.0.1" : endpoint, port, "0.0.0.0");
             Notice = host ? "Starting LAN host…" : "Connecting…";
             session.deadline = Time.unscaledTime + (webSocket ? BrowserConnectTimeout : 12f);
 

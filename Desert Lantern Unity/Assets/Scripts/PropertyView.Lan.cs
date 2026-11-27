@@ -36,6 +36,7 @@ namespace DesertLantern
         private const bool CanHostLan = true;
 #endif
         private bool browserLan = !CanHostLan;
+        private bool secureBrowserLan;
         private string portInput;
 
         private void InitializeLanMenu()
@@ -286,12 +287,17 @@ namespace DesertLantern
             }
             else
             {
-                GUI.Label(new Rect(left, panel.y + 62 * scale, width, 30 * scale),
-                    "Join a browser-enabled LAN host.", detail);
+                bool secure = GUI.Toggle(new Rect(left, panel.y + 62 * scale, width, 30 * scale),
+                    secureBrowserLan, "Secure WebSocket (WSS)");
+                if (secure != secureBrowserLan)
+                {
+                    secureBrowserLan = secure;
+                    portInput = secure ? "443" : LanSession.WebSocketPort.ToString();
+                }
             }
 
-            GUI.Label(new Rect(left, panel.y + 110 * scale, width, 25 * scale), "Host address", detail);
-            joinAddress = GUI.TextField(new Rect(left, panel.y + 137 * scale, width, 33 * scale), joinAddress, 15);
+            GUI.Label(new Rect(left, panel.y + 110 * scale, width, 25 * scale), secureBrowserLan ? "Host DNS name" : "Host IPv4 address", detail);
+            joinAddress = GUI.TextField(new Rect(left, panel.y + 137 * scale, width, 33 * scale), joinAddress, secureBrowserLan ? 253 : 15);
             GUI.Label(new Rect(left, panel.y + 179 * scale, width, 24 * scale), browserLan ? "TCP port" : "UDP port", detail);
             portInput = GUI.TextField(new Rect(left, panel.y + 205 * scale, width, 33 * scale), portInput, 5);
             float half = (width - 8 * scale) / 2;
@@ -299,7 +305,7 @@ namespace DesertLantern
                 LanSession.StartLan(true, null, portInput, browserLan);
             float joinX = CanHostLan ? left + half + 8 * scale : left;
             if (DrawButton(new Rect(joinX, panel.y + 259 * scale, CanHostLan ? half : width, 41 * scale), "Join motel"))
-                LanSession.StartLan(false, joinAddress, portInput, browserLan);
+                LanSession.StartLan(false, joinAddress, portInput, browserLan, secureBrowserLan);
             GUI.enabled = true;
             if (DrawButton(new Rect(left, panel.y + 313 * scale, width, 37 * scale), connecting ? "Cancel" : "Back"))
             {
@@ -307,7 +313,8 @@ namespace DesertLantern
                 lanMenu = false;
             }
             GUI.Label(new Rect(left, panel.y + 359 * scale, width, 42 * scale),
-                LanSession.Notice ?? "Up to four players on one local network.", detail);
+                LanSession.Notice ?? (CanHostLan ? "Up to four players on one local network."
+                    : "Allow local network access if your browser asks."), detail);
         }
     }
 }

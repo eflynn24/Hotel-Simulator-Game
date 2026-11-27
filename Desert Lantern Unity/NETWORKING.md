@@ -24,7 +24,39 @@ For two separate computers, use the address of the host's LAN adapter. A
 native desktop player avoids inbound routing limitations of WSL's default
 NAT mode.
 
-## Join from a browser
+## Join from GitHub Pages
+
+1. On the same network, start a desktop or headless host with browser support
+   as described below. GitHub Pages serves the game files while your host
+   runs the motel session.
+2. Open the [GitHub Pages game](https://eflynn24.github.io/Hotel-Simulator/)
+   and choose **County Map → LAN co-op**.
+3. In current Chrome, enter the host's private IPv4 address and TCP port
+   (default `7778`) with **Secure WebSocket (WSS)** unchecked. Use
+   `127.0.0.1` when the browser and host are on the same machine. Allow local
+   network access when asked. If you previously denied it, change the site's
+   permission in your browser settings and try again.
+4. For browsers that require an encrypted connection from HTTPS, use
+   **Secure WebSocket (WSS)**. Enter the host's DNS name without a scheme or
+   path and the TLS proxy port (default `443`). The browser must trust its
+   certificate. Local network permission can still be required.
+
+For WSS, use a DNS name that points to the proxy on your LAN and a TLS
+certificate for that name. The proxy must forward WebSocket upgrades at
+`/` to the Unity browser host. For example, with Caddy on the same machine
+as the Unity host and a certificate trusted by the players' browsers:
+
+```caddyfile
+motel.example.net {
+    tls /path/to/fullchain.pem /path/to/private-key.pem
+    reverse_proxy 127.0.0.1:7778
+}
+```
+
+Keep the host and proxy reachable from the LAN. GitHub Pages does not
+run the host process.
+
+## Join from a local HTTP copy
 
 1. On the host's desktop build, open **County Map → LAN co-op**, check
    **Allow browser players (WebSocket)**, then choose **Host motel**. The default
@@ -48,8 +80,8 @@ from its extracted directory:
 The host occupies one of the four slots, including when it runs without a window.
 If the host is in WSL NAT mode, use the native desktop host for other devices
 or configure the WSL networking so the TCP ports are reachable from the LAN.
-Use the HTTP copy for browser LAN. The HTTPS GitHub Pages site cannot use this
-plain WebSocket endpoint.
+The local HTTP copy also supports direct WebSocket connections on browsers
+that disallow it from GitHub Pages.
 
 ## Build
 
@@ -108,3 +140,6 @@ Two Chromium clients joined the same Linux WebSocket host from the local HTTP
 County Map. Both showed the three connected avatars, movement from one browser
 appeared in the other, and both returned to the County Map after host shutdown.
 This test ran on one machine.
+
+Chromium also joined the local host directly from the live GitHub Pages origin
+using both loopback and private IPv4 after local network permission was granted.

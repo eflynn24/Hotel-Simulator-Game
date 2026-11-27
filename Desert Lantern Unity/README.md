@@ -59,7 +59,7 @@ Unity -batchmode -nographics -quit -projectPath "$PWD" -buildTarget WebGL \
   -executeMethod DesertLantern.Editor.LocalWebBuild.Build -logFile -
 ```
 
-For browser co-op setup, see [Join from a browser](NETWORKING.md#join-from-a-browser).
+For browser co-op setup, see [Join from a browser](NETWORKING.md#join-from-github-pages).
 
 See [Unity’s web deployment guide](https://docs.unity3d.com/6000.0/Documentation/Manual/webgl-deploying.html)
 for details on build compression and server headers.
