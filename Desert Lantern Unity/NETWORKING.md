@@ -27,7 +27,7 @@ NAT mode.
 ## Join from GitHub Pages
 
 On the motel's Wi-Fi network, open the
-[GitHub Pages game](https://eflynn24.github.io/Hotel-Simulator/) in current
+[GitHub Pages game](https://eflynn24.github.io/Hotel-Simulator-Game/) in current
 Chrome and click **Join LAN**. The published build uses the configured
 Windows Wi-Fi address and TCP port `7778`. The headless host starts when
 its Windows user signs in and leaves all four slots available to players. Allow local

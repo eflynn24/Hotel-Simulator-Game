@@ -49,7 +49,7 @@ namespace DesertLantern
 
             quickJoinLan = url.Host == PublishedLanAddress ||
                 (url.Host == "eflynn24.github.io" &&
-                    url.AbsolutePath.StartsWith("/Hotel-Simulator/", System.StringComparison.Ordinal));
+                    url.AbsolutePath.StartsWith("/Hotel-Simulator-Game/", System.StringComparison.Ordinal));
             if (quickJoinLan)
                 joinAddress = PublishedLanAddress;
             else if (IPAddress.TryParse(url.Host, out var address) && address.AddressFamily == AddressFamily.InterNetwork)
