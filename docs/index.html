@@ -52,12 +52,12 @@
       }
 
       var buildUrl = "Build";
-      var loaderUrl = buildUrl + "/Web.loader.js";
+      var loaderUrl = buildUrl + "/Web.loader.js?v=40dcdb28f1dc41de929bbb48b7afde5c";
       var config = {
         arguments: [],
-        dataUrl: buildUrl + "/Web.data",
-        frameworkUrl: buildUrl + "/Web.framework.js",
-        codeUrl: buildUrl + "/Web.wasm",
+        dataUrl: buildUrl + "/Web.data?v=40dcdb28f1dc41de929bbb48b7afde5c",
+        frameworkUrl: buildUrl + "/Web.framework.js?v=40dcdb28f1dc41de929bbb48b7afde5c",
+        codeUrl: buildUrl + "/Web.wasm?v=40dcdb28f1dc41de929bbb48b7afde5c",
         streamingAssetsUrl: "StreamingAssets",
         companyName: "DefaultCompany",
         productName: "Desert Lantern Unity",
@@ -104,8 +104,28 @@
 
       document.querySelector("#unity-loading-bar").style.display = "block";
 
+      function showLaunchFailure(error) {
+        console.error(error);
+        document.querySelector('#unity-loading-bar').style.display = 'none';
+        const banner = document.querySelector('#unity-warning');
+        banner.replaceChildren();
+        const message = document.createElement('div');
+        message.style.cssText = 'background: #251810; color: white; padding: 16px;';
+        message.textContent = 'The game could not load. ';
+        const retry = document.createElement('button');
+        retry.textContent = 'Retry';
+        retry.onclick = () => {
+          const url = new URL(location.href);
+          url.searchParams.set('retry', Date.now());
+          location.replace(url);
+        };
+        message.appendChild(retry);
+        banner.appendChild(message);
+        banner.style.display = 'block';
+      }
       var script = document.createElement("script");
       script.src = loaderUrl;
+      script.onerror = showLaunchFailure;
       script.onload = () => {
         createUnityInstance(canvas, config, (progress) => {
           document.querySelector("#unity-progress-bar-full").style.width = 100 * progress + "%";
@@ -116,7 +136,7 @@
                 };
 
               }).catch((message) => {
-                alert(message);
+                showLaunchFailure(message);
               });
             };
 
