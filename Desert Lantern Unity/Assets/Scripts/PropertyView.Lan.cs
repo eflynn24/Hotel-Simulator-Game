@@ -36,7 +36,7 @@ namespace DesertLantern
         private const bool CanHostLan = true;
 #endif
         private const string PublishedLanAddress = "192.168.4.43";
-        private bool publishedLan;
+        private bool quickJoinLan;
         private bool browserLan = !CanHostLan;
         private bool secureBrowserLan;
         private string portInput;
@@ -47,15 +47,16 @@ namespace DesertLantern
             if (CanHostLan || !System.Uri.TryCreate(Application.absoluteURL, System.UriKind.Absolute, out var url))
                 return;
 
-            publishedLan = url.Host == "eflynn24.github.io" &&
-                url.AbsolutePath.StartsWith("/Hotel-Simulator/", System.StringComparison.Ordinal);
-            if (publishedLan)
+            quickJoinLan = url.Host == PublishedLanAddress ||
+                (url.Host == "eflynn24.github.io" &&
+                    url.AbsolutePath.StartsWith("/Hotel-Simulator/", System.StringComparison.Ordinal));
+            if (quickJoinLan)
                 joinAddress = PublishedLanAddress;
             else if (IPAddress.TryParse(url.Host, out var address) && address.AddressFamily == AddressFamily.InterNetwork)
                 joinAddress = url.Host;
         }
 
-        private void JoinPublishedLan()
+        private void JoinConfiguredLan()
         {
             lanMenu = true;
             joinAddress = PublishedLanAddress;

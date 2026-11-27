@@ -63,6 +63,14 @@ run the host process.
 
 ## Join from a local HTTP copy
 
+On the motel's Wi-Fi, open `http://192.168.4.43:8082/` and choose
+**Join LAN** on the County Map. This serves the game from the Windows host
+and joins the same multiplayer session as GitHub Pages. Players can use
+this link if their browser blocks requests from GitHub Pages to the LAN.
+The Windows web server and motel host start at Windows sign-in.
+
+To serve a local HTTP copy on a different host:
+
 1. On the host's desktop build, open **County Map → LAN co-op**, check
    **Allow browser players (WebSocket)**, then choose **Host motel**. The default
    WebSocket port is TCP `7778`.
