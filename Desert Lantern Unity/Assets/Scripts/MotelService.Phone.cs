@@ -20,6 +20,7 @@ namespace DesertLantern
             if (!CanBookPhoneFor(worker) || callMinute != NextPhoneCall ||
                 !Book(room, PhoneArrival, DepartureForNights(PhoneArrival, PhoneNights), BookingChannel.Telephone, PhonePreference))
                 return false;
+            FinishOperation(OperationKind.Phone, 0, callMinute);
             FinishPhoneBooking();
             return true;
         }
@@ -83,6 +84,7 @@ namespace DesertLantern
 
         private void MissBookingCall()
         {
+            FinishOperation(OperationKind.Phone, 0, NextPhoneCall, true);
             missedBookingMinute = NextPhoneCall;
             RecordMissed(NextPhoneCall);
             FinishPhoneBooking();

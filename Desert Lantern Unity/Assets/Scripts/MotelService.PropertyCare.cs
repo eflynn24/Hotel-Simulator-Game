@@ -99,13 +99,15 @@ namespace DesertLantern
             for (int room = 0; room < RoomCapacity; room++)
             {
                 bool occupied = (ActiveRooms & (1 << room)) != 0;
-                if (!occupied && StaffUrgentOnly(4))
-                    continue;
                 for (int fixture = 0; fixture < RoomFixtureCount; fixture++)
                 {
                     var target = (Fixture)fixture;
                     bool broken = IsBroken(room, target);
                     int condition = Condition(room, target);
+                    bool urgent = broken && (occupied || target is Fixture.DoorLock or Fixture.Toilet);
+                    if (!EmployeeEligible(StaffRole.Technician, urgent) ||
+                        !CanWorkOperation(OperationKind.Maintenance, room + fixture * RoomCount, 0))
+                        continue;
                     if (!broken && (StaffUrgentOnly((int)StaffRole.Technician) || RepairParts < 4 || condition >= 55))
                         continue;
                     int score = (broken ? 0 : 200) + (occupied ? 0 : 100) + condition;
@@ -119,9 +121,9 @@ namespace DesertLantern
             }
             if (bestRoom >= 0 && IsBroken(bestRoom, bestFixture) && Repair(bestRoom, bestFixture, false))
                 return;
-            if (WasherBroken)
+            if (WasherBroken && CanWorkOperation(OperationKind.Maintenance, (int)Fixture.Washer * RoomCount, 0))
                 Repair(0, Fixture.Washer, false);
-            else if (IsBroken(0, Fixture.Router))
+            else if (IsBroken(0, Fixture.Router) && CanWorkOperation(OperationKind.Maintenance, (int)Fixture.Router * RoomCount, 0))
                 Repair(0, Fixture.Router, false);
             else if (bestRoom >= 0)
                 Repair(bestRoom, bestFixture, false);
@@ -145,7 +147,10 @@ namespace DesertLantern
                 RepairParts--;
             }
             int index = FixtureIndex(room, fixture);
+            bool tracked = IsBroken(room, fixture) || condition[index] < 55;
             condition[index] = replace ? (byte)100 : (byte)EquipmentCondition.AfterRepair(condition[index], 65);
+            if (tracked && condition[index] >= 55)
+                FinishOperation(OperationKind.Maintenance, room + (int)fixture * RoomCount, 0);
             return true;
         }
 
@@ -188,7 +193,7 @@ namespace DesertLantern
             int outcome = 0;
             if ((LateCheckIns & bit) != 0) outcome |= 1;
             if (RequestSatisfied(room)) outcome |= 2;
-            if ((!RequestSatisfied(room) || RequestDue(room)) && RequestWait(room) >= 45) outcome |= 4;
+            if ((lateGuestRequests & bit) != 0 || (!RequestSatisfied(room) || RequestDue(room)) && RequestWait(room) >= 45) outcome |= 4;
             if ((repairComplaints & bit) != 0 && (MaterialIssues(room) > 0 || IsBroken(0, Fixture.Router))) outcome |= 8;
             if (stayQuality[room] >= Expectations(room) && Cleanliness(room) >= 35) outcome |= 16;
             if ((DeliveredBags & bit) != 0) outcome |= 32;
@@ -209,7 +214,7 @@ namespace DesertLantern
         {
             int flags = reviewFlags[room];
             int rating = ReviewRating(flags);
-            string service = (flags & 2) != 0 ? "Staff helped with my request."
+            string service = (flags & 2) != 0 ? (flags & 4) != 0 ? "Staff helped after a long wait." : "Staff helped with my request."
                 : (flags & 4) != 0 ? "I waited for help and my request went unresolved."
                 : (flags & 32) != 0 ? "My luggage was brought to my room." : "Check-in was straightforward.";
             if ((flags & 1) != 0)

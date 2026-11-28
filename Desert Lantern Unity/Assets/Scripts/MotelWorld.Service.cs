@@ -15,11 +15,12 @@ namespace DesertLantern
         private readonly BoxCollider[] carColliders = new BoxCollider[MotelService.RoomCount];
         private readonly Transform[] trunks = new Transform[MotelService.RoomCount];
         public static readonly Vector3 DeliveryBay = new Vector3(-13.80f, 0, 1.20f);
-        public static readonly Vector3 SupplyStorage = new Vector3(-8.46f, 0, 5.55f);
+        public static readonly Vector3 SupplyStorage = new Vector3(-14.32f, 0, 7.22f);
         private static readonly Vector3 CrateAtBay = new Vector3(-13.80f, .55f, 2.03f);
         private Transform supplyCrate;
         private readonly GameObject[] waitingParcels = new GameObject[8];
         private BoxCollider supplyCollider;
+        private readonly Transform[] carriedCrates = new Transform[LanSession.Capacity];
 
         public static readonly Vector3 PhoneApproach = new Vector3(-8.98f, 0, 6.72f);
         public static readonly Vector3 PhonePosition = new Vector3(-8.92f, 1.30f, 7.17f);
@@ -48,6 +49,7 @@ namespace DesertLantern
         {
             QualitySettings.pixelLightCount = Mathf.Max(QualitySettings.pixelLightCount, 8);
             OutdoorLamp(new Vector3(-9.75f, 2.23f, 3.45f), 6.1f);
+            OutdoorLamp(new Vector3(-14.55f, 2.31f, 3.95f), 4.1f);
             for (int room = 0; room < RoomX.Length; room++)
                 OutdoorLamp(new Vector3(RoomX[room] + .82f, FloorHeight(room) + 2.56f, 5.98f), 6.2f);
             foreach (float x in new[] { -13.85f, 13.10f })
@@ -60,9 +62,21 @@ namespace DesertLantern
 
         private void OutdoorLamp(Vector3 position, float range)
         {
-            Box("Outdoor lamp shade", position + Vector3.up * .115f,
-                new Vector3(.43f, .14f, .33f), iron);
-            Box("Outdoor lamp glass", position, new Vector3(.33f, .10f, .25f), cream);
+            if (range < 8f)
+            {
+                Box("Lantern cap", position + Vector3.up * .10f, new Vector3(.23f, .071f, .20f), dark);
+                Box("Lantern diffuser", position, new Vector3(.16f, .17f, .14f), lamp);
+                Box("Lantern base", position + Vector3.down * .105f, new Vector3(.21f, .047f, .182f), dark);
+                Box("Lantern wall arm", position + new Vector3(0, .093f, .18f), new Vector3(.051f, .056f, .37f), iron);
+                for (int side = -1; side <= 1; side += 2)
+                    Box("Lantern metal stile", position + new Vector3(side * .085f, 0, -.067f),
+                        new Vector3(.017f, .18f, .019f), dark);
+            }
+            else
+            {
+                Box("Parking lamp shade", position + Vector3.up * .115f, new Vector3(.43f, .14f, .33f), iron);
+                Box("Parking lamp glass", position, new Vector3(.33f, .10f, .25f), cream);
+            }
             Light light = Node("Outdoor light", position + Vector3.down * .12f).gameObject.AddComponent<Light>();
             light.type = LightType.Point;
             light.color = new Color(1f, .79f, .54f);
@@ -136,33 +150,65 @@ namespace DesertLantern
             Box("Delivery pallet", new Vector3(-13.80f, .16f, 2.03f),
                 new Vector3(1.45f, .29f, .98f), oak, SolidLayer);
             Sign("DELIVERIES", new Vector3(-13.80f, .31f, 1.51f), .15f, Color.white);
-            Box("Supply storage back", new Vector3(-7.48f, .92f, 5.55f),
-                new Vector3(.16f, 1.84f, 1.48f), iron, SolidLayer);
-            string[] labels = { "Kits", "Towels", "Linens" };
-            Material[] contents = { carton, linen, runner };
-            for (int level = 0; level < 3; level++)
+            const float shelfX = -14.32f;
+            Material steel = Surface(new Color32(77, 78, 73, 255), .43f, 29, .27f, .21f);
+            Box("Rack rear liner", new Vector3(shelfX, 1.06f, 8.18f),
+                new Vector3(2.18f, 2.06f, .045f), steel, SolidLayer);
+            for (int side = -1; side <= 1; side += 2)
+                for (int edge = 0; edge < 2; edge++)
+                    Box("Powder-coated rack upright", new Vector3(shelfX + side * 1.08f, 1.05f, 7.64f + edge * .51f),
+                        new Vector3(.054f, 2.10f, .052f), steel);
+            string[] labels = { "KITS", "TOWELS", "LINENS" };
+            for (int level = 0; level < 4; level++)
             {
-                float height = .25f + level * .66f;
-                Box("Supply shelf", new Vector3(-7.78f, height, 5.55f),
-                    new Vector3(.65f, .095f, 1.50f), oak, SolidLayer);
-                supplyCounts[level] = Sign(labels[level] + " 0", new Vector3(-7.81f, height + .055f, 4.773f),
-                    .125f, Color.white);
+                float height = .26f + level * .50f;
+                Box("Supply rack shelf", new Vector3(shelfX, height, 7.91f),
+                    new Vector3(2.15f, .058f, .55f), oak, SolidLayer);
+                Box("Supply shelf steel lip", new Vector3(shelfX, height, 7.616f),
+                    new Vector3(2.19f, .064f, .044f), steel);
+                if (level == 3)
+                    continue;
+                supplyCounts[level] = Sign(labels[level] + " 0", new Vector3(shelfX + .66f, height, 7.591f),
+                    .079f, new Color32(254, 223, 172, 255));
                 for (int unit = 0; unit < 4; unit++)
                 {
-                    stockProps[level, unit] = Box(labels[level] + " stock", new Vector3(-7.82f, height + .14f, 4.98f + unit * .34f),
-                        new Vector3(.48f, level == 0 ? .18f : .11f, .27f), contents[level]);
-                    stockProps[level, unit].SetActive(false);
+                    Transform stack = Node("Stock " + labels[level], new Vector3(shelfX - .79f + unit * .48f, height + .035f, 7.94f));
+                    if (level == 0)
+                    {
+                        Piece(stack, "Cleaning carton", new Vector3(0, .104f, 0), new Vector3(.37f, .20f, .33f), carton);
+                        Piece(stack, "Carton label", new Vector3(.04f, .104f, -.168f), new Vector3(.16f, .10f, .012f), linen);
+                    }
+                    else
+                    {
+                        for (int fold = 0; fold < 3; fold++)
+                            Piece(stack, "Folded fabric", new Vector3((fold % 2) * .012f, .028f + fold * .051f, 0),
+                                new Vector3(.34f - fold * .012f, .048f, level == 1 ? .27f : .34f), linen);
+                    }
+                    stockProps[level, unit] = stack.gameObject;
+                    stack.gameObject.SetActive(false);
                 }
             }
-            Box("Storage sign board", new Vector3(-7.80f, 1.90f, 4.82f),
-                new Vector3(1.10f, .25f, .08f), dark);
-            Sign("SUPPLIES", new Vector3(-7.80f, 1.90f, 4.77f), .17f, Color.white);
+            for (int parcel = 0; parcel < 3; parcel++)
+            {
+                Vector3 box = new Vector3(shelfX - .72f + parcel * .67f, 1.93f, 8.01f);
+                Box("Reusable storage bin", box, new Vector3(.44f, .22f, .35f), parcel == 1 ? teal : carton);
+                Box("Bin pull", box + new Vector3(0, .047f, -.181f), new Vector3(.13f, .034f, .012f), steel);
+            }
+            Box("Storage sign board", new Vector3(shelfX, 2.25f, 8.11f),
+                new Vector3(1.22f, .24f, .07f), siding);
+            Sign("SUPPLIES", new Vector3(shelfX, 2.25f, 8.067f), .18f, new Color32(250, 212, 152, 255));
             supplyCrate = Node("Supply crate", CrateAtBay);
             Piece(supplyCrate, "Cardboard parcel", Vector3.zero, new Vector3(.68f, .49f, .48f), carton);
             Piece(supplyCrate, "Packing tape", new Vector3(0, .247f, 0),
                 new Vector3(.078f, .009f, .484f), cream);
             Piece(supplyCrate, "Shipping label", new Vector3(.15f, .248f, -.07f),
                 new Vector3(.18f, .010f, .13f), linen);
+            for (int index = 0; index < carriedCrates.Length; index++)
+            {
+                carriedCrates[index] = Object.Instantiate(supplyCrate, root);
+                carriedCrates[index].name = "Carried supply crate";
+                carriedCrates[index].gameObject.SetActive(false);
+            }
             supplyCollider = supplyCrate.gameObject.AddComponent<BoxCollider>();
             supplyCollider.size = new Vector3(.68f, .49f, .48f);
             supplyCrate.gameObject.SetActive(false);
@@ -175,29 +221,39 @@ namespace DesertLantern
             }
         }
 
-        public void ShowSupplyDelivery(MotelService service, MotelWalker carrier)
+        public void ShowSupplyDelivery(MotelService service, System.Func<ulong, MotelWalker> findCarrier)
         {
             for (int kind = 0; kind < supplyCounts.Length; kind++)
             {
                 int count = service.Stock(kind);
-                string name = kind == 0 ? "Kits" : kind == 1 ? "Towels" : "Linens";
+                string name = kind == 0 ? "KITS" : kind == 1 ? "TOWELS" : "LINENS";
                 string text = name + " " + count;
                 if (supplyCounts[kind].text != text)
                     supplyCounts[kind].text = text;
                 for (int unit = 0; unit < 4; unit++)
                     stockProps[kind, unit].SetActive(unit < count);
             }
-            bool onPallet = service.Delivery == SupplyDelivery.AtBay;
-            int waiting = service.ReadyOrderCount - (onPallet ? 1 : 0);
+            int ready = service.ReadyOrderCount;
             for (int index = 0; index < waitingParcels.Length; index++)
-                waitingParcels[index].SetActive(index < waiting);
-            bool visible = onPallet || carrier != null;
-            supplyCrate.gameObject.SetActive(visible);
-            if (!visible)
-                return;
-            supplyCollider.enabled = onPallet;
-            supplyCrate.SetPositionAndRotation(onPallet ? CrateAtBay : carrier.CarryPosition,
-                onPallet ? Quaternion.identity : carrier.Orientation);
+                waitingParcels[index].SetActive(index < ready - 1);
+            supplyCrate.gameObject.SetActive(ready > 0);
+            supplyCollider.enabled = ready > 0;
+
+            int shown = 0;
+            for (int index = 0; index < service.PendingOrderCount && shown < carriedCrates.Length; index++)
+            {
+                SupplyOrder order = service.SupplyOrderAt(index);
+                if (order.Status != SupplyDelivery.Carried)
+                    continue;
+                MotelWalker carrier = findCarrier(order.Carrier);
+                if (carrier == null)
+                    continue;
+                Transform crate = carriedCrates[shown++];
+                crate.SetPositionAndRotation(carrier.CarryPosition, carrier.Orientation);
+                crate.gameObject.SetActive(true);
+            }
+            for (int index = shown; index < carriedCrates.Length; index++)
+                carriedCrates[index].gameObject.SetActive(false);
         }
 
         private Material rubber, chrome, bark, shrub;
@@ -231,19 +287,29 @@ namespace DesertLantern
             Palm(new Vector3(19.2f, 0, 2.80f), 5.41f);
             Palm(new Vector3(15.34f, 0, -6.90f), 4.68f);
             var rng = new System.Random(167);
-            for (int i = 0; i < 24; i++)
+            Mesh[] crowns = { BuildCanopyMesh(rng), BuildCanopyMesh(rng), BuildCanopyMesh(rng) };
+            Material shadedLeaves = Surface(new Color32(75, 87, 56, 255), .65f, 24, .14f);
+            Material sunlitLeaves = Surface(new Color32(101, 110, 67, 255), .53f, 18, .16f);
+            for (int i = 0; i < 20; i++)
             {
-                float x = -33f + i * 3f + (float)rng.NextDouble() * 2;
-                float z = 16.8f + (float)rng.NextDouble() * 10f;
-                float height = 2.3f + (float)rng.NextDouble() * 4f;
-                Cylinder("Woodland trunk", new Vector3(x, height * .42f, z),
-                    new Vector3(.13f, height * .42f, .13f), bark);
-                for (int branch = 0; branch < 3; branch++)
+                var foot = new Vector3(-34f + i * 3.8f + (float)rng.NextDouble() * 2.4f,
+                    0, 17.5f + (float)rng.NextDouble() * 10f);
+                float height = 2.7f + (float)rng.NextDouble() * 3.3f;
+                Vector3 fork = foot + new Vector3(.21f, height * .55f, -.11f);
+                BuildTreeLimb(foot, fork, height * .032f);
+
+                for (int branch = 0; branch < 4; branch++)
                 {
-                    float dx = (branch - 1) * .70f;
-                    float stretch = 1f + (float)rng.NextDouble() * .32f;
-                    Primitive(PrimitiveType.Sphere, "Woodland crown", new Vector3(x + dx, height + (branch % 2) * .72f, z),
-                        new Vector3(2.4f * stretch, 2.7f * stretch, 2.5f * stretch), branch == 1 ? shrub : leaf);
+                    float angle = (i * .78f + branch * 1.81f);
+                    var lateral = new Vector3(Mathf.Cos(angle), 0, Mathf.Sin(angle));
+                    float spread = height * (.20f + .13f * (float)rng.NextDouble());
+                    Vector3 tip = foot + lateral * spread + Vector3.up * (height * (.75f + .22f * (float)rng.NextDouble()));
+                    BuildTreeLimb(fork, tip, height * .016f);
+                    Transform cluster = Node("Mesquite foliage", tip + Vector3.up * .21f);
+                    cluster.localRotation = Quaternion.Euler(6f * (branch - 1), angle * Mathf.Rad2Deg, 0);
+                    cluster.localScale = new Vector3(height * .54f, height * (.34f + .04f * branch), height * .47f);
+                    cluster.gameObject.AddComponent<MeshFilter>().sharedMesh = crowns[branch % crowns.Length];
+                    cluster.gameObject.AddComponent<MeshRenderer>().sharedMaterial = branch < 2 ? shadedLeaves : sunlitLeaves;
                 }
             }
             for (int i = 0; i < 19; i++)
@@ -254,6 +320,54 @@ namespace DesertLantern
                 Primitive(PrimitiveType.Sphere, "Roadside shrub", new Vector3(x, .31f, z),
                     new Vector3(1.2f * size, .67f * size, size), i % 3 == 0 ? leaf : shrub);
             }
+        }
+
+        private void BuildTreeLimb(Vector3 start, Vector3 end, float radius)
+        {
+            Vector3 axis = end - start;
+            GameObject limb = Cylinder("Mesquite branch", (start + end) * .5f,
+                new Vector3(radius * 2, axis.magnitude * .5f, radius * 2), bark);
+            limb.transform.rotation = Quaternion.FromToRotation(Vector3.up, axis);
+        }
+
+        private Mesh BuildCanopyMesh(System.Random random)
+        {
+            const int ringCount = 7, sides = 15;
+            var vertices = new List<Vector3>(ringCount * sides + 2) { Vector3.down * .5f };
+            var triangles = new List<int>();
+            for (int ring = 0; ring < ringCount; ring++)
+            {
+                float phi = (ring + 1f) / (ringCount + 1f) * Mathf.PI;
+                float y = -.5f * Mathf.Cos(phi);
+                for (int side = 0; side < sides; side++)
+                {
+                    float angle = side * Mathf.PI * 2 / sides;
+                    float waviness = 1f + .13f * Mathf.Sin(angle * 5 + phi * 2) + .10f * (float)random.NextDouble();
+                    float radius = .5f * Mathf.Sin(phi) * waviness;
+                    vertices.Add(new Vector3(radius * Mathf.Cos(angle), y, radius * Mathf.Sin(angle)));
+                }
+            }
+            int top = vertices.Count;
+            vertices.Add(Vector3.up * .5f);
+            for (int side = 0; side < sides; side++)
+            {
+                int next = (side + 1) % sides;
+                triangles.AddRange(new[] { 0, 1 + side, 1 + next });
+                for (int ring = 0; ring < ringCount - 1; ring++)
+                {
+                    int start = 1 + ring * sides;
+                    int a = start + side, b = start + next;
+                    triangles.AddRange(new[] { a, a + sides, b, b, a + sides, b + sides });
+                }
+                int last = 1 + (ringCount - 1) * sides;
+                triangles.AddRange(new[] { last + side, top, last + next });
+            }
+            var mesh = new Mesh { name = "Irregular mesquite canopy" };
+            mesh.SetVertices(vertices);
+            mesh.SetTriangles(triangles, 0);
+            mesh.RecalculateNormals();
+            meshes.Add(mesh);
+            return mesh;
         }
 
         private void Palm(Vector3 foot, float height)

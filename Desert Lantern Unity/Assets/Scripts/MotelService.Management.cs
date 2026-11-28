@@ -115,13 +115,13 @@ namespace DesertLantern
             _ => 42
         };
 
-        private int Patience(int room) => Personality(room) switch
+        private int Patience(int room) => (requestMinutes[room] < MinutesPerDay ? 25 : 0) + (Personality(room) switch
         {
             GuestPersonality.Practical => 135,
             GuestPersonality.ComfortSeeker => 94,
             GuestPersonality.Business => 72,
             _ => 100
-        };
+        });
 
         private void InitializeGuestProfile(int room, BookingPreference preference, int rate)
         {
@@ -164,6 +164,7 @@ namespace DesertLantern
                 {
                     reputation = Math.Max(0, reputation - 5);
                     Post(Account.Maintenance, -(incident == PropertyIncident.UtilityEmergency ? 32 : 18));
+                    FinishOperation(OperationKind.Incident, 0, incidentDue, true);
                     incident = PropertyIncident.None;
                 }
                 return;
@@ -213,6 +214,7 @@ namespace DesertLantern
                         : incident == PropertyIncident.Pests ? 22 : 38;
                     if (PayExpansionCost(Account.Maintenance, cost))
                     {
+                        FinishOperation(OperationKind.Incident, 0, incidentDue);
                         incident = PropertyIncident.None;
                         return true;
                     }

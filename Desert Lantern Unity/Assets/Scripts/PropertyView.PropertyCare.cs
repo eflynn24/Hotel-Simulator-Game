@@ -78,7 +78,9 @@ namespace DesertLantern
             int room = (int)data.y;
             Fixture fixture = (Fixture)(int)data.z;
             MotelService service = Service;
-            if (operation <= 1 && AtFixture(room, fixture, position))
+            if (operation <= 1 && AtFixture(room, fixture, position) &&
+                service.CanWorkOperation(OperationKind.Maintenance, (fixture is Fixture.Washer or Fixture.Router ? 0 : room) +
+                    (int)fixture * MotelService.RoomCount, 0, worker))
                 service.Repair(room, fixture, operation == 1);
             else if (operation == 2 && AtFixture(room, Fixture.DoorLock, position))
                 service.ToggleRoomClosure(room);
@@ -86,8 +88,7 @@ namespace DesertLantern
                 service.BuyMaintenanceStock(operation == 4);
             else if (AtComputer(position) && (operation == 5 || operation == 6))
                 service.ManageFinances(operation - 5);
-            else if (operation == 7 && MotelWorld.NearFloor(position, MotelWorld.CartStation) &&
-                MotelWalker.Distance(position, MotelWorld.CartStation) < .85f)
+            else if (operation == 7 && AtHousekeepingCart(position))
                 service.ToggleHousekeepingCart(worker);
             else if (operation == 8 && NearActiveGuest(room, position))
                 service.ResolveGuestIssue(room, (GuestIssue)(int)data.z);
@@ -147,9 +148,10 @@ namespace DesertLantern
         private void DrawMaintenanceMarkers(float scale)
         {
             Vector3 point = caretaker.Position;
-            if (InsideOffice(point))
+            if (MotelWorld.InsideUtility(point))
             {
-                if (DrawWorldButton(new Vector3(-11.37f, 1.62f, 5.25f), "Inspect washer", 128 * scale, scale))
+                if (Service.WasherBroken && DrawWorldButton(MotelWorld.LaundryApproach + Vector3.up * 1.65f,
+                    "Inspect washer", 128 * scale, scale))
                 {
                     if (AtFixture(0, Fixture.Washer, point))
                         InspectFixture(0, Fixture.Washer);

@@ -9,6 +9,8 @@ namespace DesertLantern
     internal partial struct MotelService
     {
         public const int StaffWage = 25;
+        public const int PhonePatienceMinutes = 55;
+        private const int ServiceShiftMinutes = 25;
         public int Pillows, Toiletries;
         public int NextPhoneCall;
         public int MissedCalls;
@@ -43,6 +45,8 @@ namespace DesertLantern
             int bit = 1 << room;
             if (RequestOpen(room) && RequestWait(room) >= 45)
                 return "Impatient";
+            if (RequestSatisfied(room) && (lateGuestRequests & bit) != 0)
+                return "Satisfied · long wait";
             if (RequestSatisfied(room))
                 return (LateCheckIns & bit) != 0 ? "Satisfied · late check-in" : "Satisfied";
             if ((FulfilledRequests & bit) != 0)
@@ -63,6 +67,9 @@ namespace DesertLantern
         {
             if ((ActiveRooms & (1 << room)) == 0)
                 return;
+            if (RequestDue(room) || RequestClaimed(room))
+                FinishOperation(OperationKind.Guest, room, requestMinutes[room], true);
+            ReleaseGuestTask(room);
             KnownRequests |= (ushort)(1 << room);
             FulfilledRequests |= (ushort)(1 << room);
         }
@@ -108,7 +115,7 @@ namespace DesertLantern
 
         private void AdvanceOperations(int previous)
         {
-            if (ClockMinute >= NextPhoneCall + 55)
+            if (ClockMinute >= NextPhoneCall + PhonePatienceMinutes)
             {
                 if (BookingCallRinging || CanBookPhone)
                     MissBookingCall();
@@ -148,10 +155,10 @@ namespace DesertLantern
                             ManageStaff(role, false);
                     }
 
-            if (ClockMinute - lastStaffWork < 35)
+            if (ClockMinute - lastStaffWork < ServiceShiftMinutes)
                 return;
             lastStaffWork = ClockMinute;
-            if (StaffHired(3) && Delivery == SupplyDelivery.AtBay && (!StaffUrgentOnly(3) || PendingOrderCount >= 2))
+            if (EmployeeEligible(StaffRole.Stocker, PendingOrderCount >= 2) && ReadyOrderCount > 0)
             {
                 const ulong stocker = ulong.MaxValue - 1;
                 CollectSupply(stocker);

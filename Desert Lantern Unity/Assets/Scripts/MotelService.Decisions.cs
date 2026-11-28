@@ -192,7 +192,7 @@ namespace DesertLantern
                 MotelService proposed = this;
                 int room = choice == 1 ? decisionRoom : UpgradedAlternative();
                 if (choice == 1)
-                    proposed.RemoveBooking(DecisionBookingIndex());
+                    proposed.RemoveBooking(DecisionBookingIndex(), cancelled: true);
                 int arrival = ClockMinute + ScheduleStep;
                 if (!proposed.BookAtRate(room, arrival, NextMorningDeparture, BookingChannel.Online, BookingPreference.None, choice == 1 ? 250 : 175))
                     return false;
@@ -205,6 +205,7 @@ namespace DesertLantern
             }
             else
                 reputation = Math.Min(100, reputation + 1);
+            FinishOperation(OperationKind.Decision, 0, token);
             decision = ManagementDecision.None;
             return true;
         }

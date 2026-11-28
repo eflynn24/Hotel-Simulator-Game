@@ -453,8 +453,8 @@ namespace DesertLantern
             deskPaperText.normal.textColor = Ink;
             float split = contents.width / 2;
             DrawFittedText(new Rect(contents.x, contents.y, split, 22 * scale), $"{name} · Room {room + 1} · {source}", deskPaperText);
-            string condition = service.RoomUnusable(room) ? " · Unavailable" :
-                service.RoomDirty(room) ? " · Dirty" : "";
+            string condition = service.RoomUnusable(room) ? " · Repairs needed" :
+                service.RoomDirty(room) ? " · Prepare room" : "";
             DrawFittedText(new Rect(contents.x + split, contents.y, split, 22 * scale), status + condition, deskPaperText);
             DrawFittedText(new Rect(contents.x, contents.y + 21 * scale, split, 22 * scale),
                 $"Check-in  {MotelService.DisplayTime(start)}", deskPaperText);
@@ -468,7 +468,7 @@ namespace DesertLantern
             var actions = new Rect(area.x, area.yMax - 29 * scale, area.width, 29 * scale);
             if (stay)
             {
-                if (checkout && DeskActionButton(actions, 0, 2, "Check out", DeskPriority, scale))
+                if (checkout && DeskActionButton(actions, 0, 2, "Settle bill and collect key", DeskPriority, scale))
                     RequestBookingAction(DeskCheckOutAction, new Vector3(room, end, service.GuestId(room)));
                 if (DeskActionButton(actions, 1, 2, "Extend stay", DeskSurface, scale))
                     RequestBookingAction(EditBookingAction, new Vector3(room + 6 * MotelService.RoomCount, end, service.GuestId(room)));
@@ -478,7 +478,7 @@ namespace DesertLantern
             {
                 if (deskCheckInApproved)
                     DrawFittedText(actions, "Pick up the room key and hand it to the guest.", label);
-                else if (BookingButton(actions, walkIn ? "Confirm room and check in" : "Check in", DeskPriority))
+                else if (BookingButton(actions, walkIn ? "Confirm room and prepare key" : "Prepare room key", DeskPriority))
                     RequestBookingAction(DeskCheckInAction, new Vector3(room, start, end));
                 return;
             }

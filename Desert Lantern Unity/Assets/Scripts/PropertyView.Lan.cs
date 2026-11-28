@@ -27,7 +27,6 @@ namespace DesertLantern
 
         private LanSession lan;
         private int lanOccupied;
-        private ulong guideId;
         private bool lanMenu;
         private string joinAddress = "127.0.0.1";
 #if UNITY_WEBGL && !UNITY_EDITOR
@@ -106,8 +105,10 @@ namespace DesertLantern
                 {
                     lanService = CountyPortfolio.DecodeMotel(saved, PropertyId.RoadsideMotel);
                     lanService.RecoverReceptionSession();
+                    lanService.ResetGuestTaskAssignments();
+                    lanService.ResetOperationClaims();
                     lanService.RecoverBag(lanService.Carrier);
-                    lanService.RecoverSupply(lanService.SupplyCarrier);
+                    lanService.RecoverSupplyCarriers();
                     lanService.RecoverHousekeepingCart(lanService.CartCarrier);
                 }
                 catch (System.Exception exception)
@@ -168,10 +169,7 @@ namespace DesertLantern
                 Drive(peer.Walker, peer.Route, movement, fresh && peer.Run, delta);
             }
 
-            if (escorting && peers.TryGetValue(guideId, out Peer guide))
-                UpdateGuest(delta, guide.Walker.Position);
-            else
-                UpdateGuest(delta, caretaker?.Position ?? MotelWorld.Spawn);
+            UpdateGuest(delta);
 
             UpdateServiceActors(delta);
             if (Time.unscaledTime >= nextSnapshot)
@@ -190,16 +188,10 @@ namespace DesertLantern
 
             foreach (ulong id in departing)
             {
-                if (escorting && !staffEscort && guideId == id)
-                {
-                    guest?.Dispose();
-                    guest = null;
-                    guestRoute.Clear();
-                    escorting = false;
-                    SpawnGuest();
-                }
                 MotelService service = Service;
                 service.ReleasePhone(id);
+                service.ReleaseGuestTasks(id);
+                service.ReleaseOperations(id);
                 service.RecoverBag(id);
                 service.RecoverSupply(id);
                 service.RecoverHousekeepingCart(id);
@@ -330,7 +322,7 @@ namespace DesertLantern
             if (!peers.TryGetValue(id, out Peer peer))
                 return;
             if (action == ReceptionAction)
-                HandleReception(id, peer.Walker.Position, peer.Route);
+                HandleReception(id, peer.Walker.Position);
             else if (action == SelectKeyAction && position.x >= 0 && position.x < Guests.Length &&
                 position.x == Mathf.Floor(position.x))
                 PickReceptionKey(id, (int)position.x, peer.Walker.Position);
@@ -339,7 +331,7 @@ namespace DesertLantern
             else if (action == ClockSpeedAction && (position.x == 1 || position.x == 2 ||
                 position.x == 4 || position.x == 8))
                 SetClockSpeed((byte)position.x);
-            else if (action == AnswerPhoneAction || action == DeclinePhoneAction || action == ReturnPhoneAction || action == ServeGuestAction || action == HireBellhopAction)
+            else if (action == AnswerPhoneAction || action == DeclinePhoneAction || action == ReturnPhoneAction || action == HireBellhopAction)
                 HandleGuestAction(action, 0, peer.Walker.Position, id);
             else if (action == SellUpgradeAction && position.x >= 0 && position.x < 2 * Guests.Length &&
                 position.x == Mathf.Floor(position.x))
@@ -348,11 +340,18 @@ namespace DesertLantern
                 position.y >= 0 && position.y < MotelService.CleaningTaskCount &&
                 position.x == Mathf.Floor(position.x) && position.y == Mathf.Floor(position.y))
                 HandleCleaning(id, (int)position.x, (CleaningTask)(int)position.y, peer.Walker.Position);
+            else if (action == QuickOrderAction)
+                HandleQuickOrder(id, position.x);
+            else if (action == OperationOwnerAction)
+                HandleOperationOwner(id, position);
+            else if (action == GuestTaskAction)
+                HandleGuestTask(id, position, peer.Walker.Position);
             else if (action == LaundryAction)
-                HandleLaundry(peer.Walker.Position);
+                HandleLaundry(peer.Walker.Position, id);
             else if (action == SupplyDeliveryAction && position.x == (int)Service.Property &&
-                position.y == Service.ActiveOrderNumber && position.z == (int)DeliveryDock.SupplyBay)
-                HandleSupplyDelivery(id, peer.Walker.Position, Service.DeliveryReference);
+                position.y >= 1 && position.y <= 16777216 && position.y == Mathf.Floor(position.y) && position.z == (int)DeliveryDock.SupplyBay)
+                HandleSupplyDelivery(id, peer.Walker.Position,
+                    new PropertyDelivery(Service.Property, DeliveryDock.SupplyBay, (int)position.y));
             else if (action == DecisionAction)
                 HandleDecision(position, peer.Walker.Position);
             else if (action == ManagementOfficeAction)
@@ -361,7 +360,7 @@ namespace DesertLantern
                 HandleExpansionAction(position, peer.Walker.Position);
             else if (action == PropertyCareAction)
                 HandlePropertyCare(id, position, peer.Walker.Position);
-            else if (action == StaffAction || action == GuestMenuAction)
+            else if (action == StaffAction)
                 HandleOperations(action, position, peer.Walker.Position);
             else if (action == CartOrderAction && position.x >= 0 && position.x <= 65535 &&
                 position.y >= 0 && position.y <= 65535 && position.x == Mathf.Floor(position.x) &&

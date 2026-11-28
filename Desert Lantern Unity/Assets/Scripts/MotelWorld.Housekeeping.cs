@@ -4,11 +4,11 @@ namespace DesertLantern
 {
     internal sealed partial class MotelWorld
     {
-        public static readonly Vector3 LaundryApproach = new Vector3(-13.05f, 0, 5.25f);
+        public static readonly Vector3 LaundryApproach = new Vector3(-15.37f, 0, 6.49f);
         private readonly GameObject[,] roomMess = new GameObject[MotelService.RoomCount, MotelService.CleaningTaskCount];
         private readonly TextMesh[] doorNotices = new TextMesh[MotelService.RoomCount];
         private readonly GameObject[] lostProperty = new GameObject[MotelService.RoomCount];
-        public static readonly Vector3 CartStation = new Vector3(-13.05f, 0, 6.50f);
+        public static readonly Vector3 CartStation = new Vector3(-13.09f, 0, 6.66f);
         private Transform housekeepingCart;
         private TextMesh laundryStatus;
         private TextMesh laundryStock;
@@ -25,7 +25,7 @@ namespace DesertLantern
                 CleaningTask.Vacuum => new Vector3(x + .59f, 0, 9.07f),
                 CleaningTask.Mop => new Vector3(x + .5f, 0, 8.15f),
                 CleaningTask.Bathroom => new Vector3(x + .63f, 0, 12.18f),
-                CleaningTask.Towels => new Vector3(x + .54f, 0, 11.44f),
+                CleaningTask.Towels or CleaningTask.Restock => new Vector3(x + .54f, 0, 11.44f),
                 _ => new Vector3(x - .02f, 0, 10.41f)
             };
             return point + Vector3.up * FloorHeight(room);
@@ -104,26 +104,116 @@ namespace DesertLantern
                     position + Vector3.up * .026f, size, task == CleaningTask.Towels ? dirtyLinen : spill);
             }
             for (int task = 0; task < MotelService.CleaningTaskCount; task++)
-                roomMess[room, task].SetActive(false);
+                roomMess[room, task]?.SetActive(false);
+        }
+
+        public static readonly Vector3 UtilityApproach = new Vector3(-14.55f, 0, 3.46f);
+        public static readonly Vector3 UtilityThreshold = new Vector3(-14.55f, 0, 4.94f);
+
+        public static bool InsideUtility(Vector3 point) =>
+            point.y < .75f && point.x > -16.83f && point.x < -12.10f &&
+            point.z > 4.11f && point.z < 8.27f;
+
+        private void BuildUtilityRoom(bool overview)
+        {
+            const float center = -14.49f;
+            const float depth = 4.24f;
+            Material paintedBlock = Surface(new Color32(183, 159, 133, 255), .41f, 25, .18f);
+            ApplySurfaceDetail(paintedBlock, "Plaster", .52f, .74f);
+            paintedBlock.SetFloat("_StuccoWear", .51f);
+            Box("Utility tiled concrete floor", new Vector3(center, -.032f, 6.22f),
+                new Vector3(4.76f, .09f, depth), tile, GroundLayer);
+            Box("Utility west wall", new Vector3(-16.91f, 1.41f, 6.22f),
+                new Vector3(.18f, 2.82f, depth), paintedBlock, SolidLayer);
+            Box("Utility service window half wall", new Vector3(-12.14f, .38f, 6.22f),
+                new Vector3(.12f, .76f, depth), paintedBlock, SolidLayer);
+            Box("Utility service window header", new Vector3(-12.14f, 2.60f, 6.22f),
+                new Vector3(.12f, .44f, depth), paintedBlock, SolidLayer);
+            Box("Utility service window front jamb", new Vector3(-12.14f, 1.52f, 4.66f),
+                new Vector3(.12f, 1.53f, 1.12f), paintedBlock, SolidLayer);
+            Box("Utility service window rear jamb", new Vector3(-12.14f, 1.52f, 7.82f),
+                new Vector3(.12f, 1.53f, 1.04f), paintedBlock, SolidLayer);
+            Box("Utility back wall", new Vector3(center, 1.41f, 8.36f),
+                new Vector3(4.96f, 2.82f, .18f), paintedBlock, SolidLayer);
+            Box("Utility front west", new Vector3(-16.09f, 1.41f, 4.10f),
+                new Vector3(1.66f, 2.82f, .18f), facade, SolidLayer);
+            Box("Utility front east", new Vector3(-13.02f, 1.41f, 4.10f),
+                new Vector3(1.80f, 2.82f, .18f), facade, SolidLayer);
+            Box("Utility lintel", new Vector3(-14.55f, 2.58f, 4.10f),
+                new Vector3(1.42f, .48f, .20f), plaster, SolidLayer);
+            Box("Utility ceiling", new Vector3(center, 2.86f, 6.22f),
+                new Vector3(4.94f, .14f, 4.44f), paintedBlock, SolidLayer);
+            GableRoof("Utility room roof", center, 2.88f, 6.18f, 5.06f, 4.66f, .52f, true);
+            Box("Utility door landing", new Vector3(-14.55f, -.04f, 3.63f),
+                new Vector3(1.65f, .10f, 1.02f), stone, GroundLayer);
+            Box("Housekeeping enamel plaque", new Vector3(-14.55f, 2.67f, 3.977f),
+                new Vector3(1.59f, .24f, .065f), teal);
+            Sign("HOUSEKEEPING", new Vector3(-14.55f, 2.67f, 3.94f), .17f, Color.white);
+            if (overview)
+                return;
+            for (int side = -1; side <= 1; side += 2)
+                Box("Painted steel door jamb", new Vector3(-14.55f + side * .69f, 1.14f, 4.08f),
+                    new Vector3(.064f, 2.28f, .23f), teal);
+            Box("Utility service counter", new Vector3(-12.16f, .80f, 6.27f),
+                new Vector3(.34f, .084f, 2.13f), oak);
+            for (int side = -1; side <= 1; side += 2)
+                Box("Service window timber casing", new Vector3(-12.217f, 1.55f, 6.27f + side * 1.04f),
+                    new Vector3(.051f, 1.53f, .064f), siding);
+            for (int joint = 1; joint <= 7; joint++)
+                Box("Utility floor grout", new Vector3(-16.81f + joint * .59f, .014f, 6.22f),
+                    new Vector3(.016f, .003f, 4.12f), stone);
+            for (int joint = 1; joint <= 6; joint++)
+                Box("Utility floor grout", new Vector3(center, .014f, 4.13f + joint * .59f),
+                    new Vector3(4.66f, .003f, .016f), stone);
+            Box("Utility floor drain", new Vector3(-15.07f, .018f, 6.24f),
+                new Vector3(.21f, .013f, .21f), iron);
+            for (int strip = 0; strip < 5; strip++)
+                Box("Floor drain slot", new Vector3(-15.15f + strip * .04f, .026f, 6.24f),
+                    new Vector3(.012f, .005f, .165f), dark);
+            Box("Wet-area wall guard", new Vector3(-16.808f, .24f, 6.22f),
+                new Vector3(.025f, .35f, 4.06f), tile);
+            Box("Utility fluorescent housing", new Vector3(-14.46f, 2.73f, 6.36f),
+                new Vector3(1.29f, .11f, .31f), iron);
+            Box("Utility light diffuser", new Vector3(-14.46f, 2.661f, 6.36f),
+                new Vector3(1.21f, .045f, .235f), lamp);
+            Light light = WarmLight(new Vector3(-14.46f, 2.49f, 6.36f), 5.6f, 1.76f);
+            light.color = new Color(1f, .88f, .73f);
+            BuildUtilityFixtures();
         }
 
         private void BuildLaundry()
         {
-            Box("Housekeeping station pad", new Vector3(-13.52f, -.052f, 5.62f),
-                new Vector3(2.15f, .10f, 2.93f), trim, GroundLayer);
-            Vector3 washer = new Vector3(-13.82f, .53f, 5.28f);
-            Box("Washing machine cabinet", washer, new Vector3(.70f, 1.06f, .89f), trim, SolidLayer);
+            Vector3 washer = new Vector3(-16.16f, .53f, 6.49f);
+            Material enamel = Surface(new Color32(208, 211, 206, 255), .14f, 28, .46f);
+            Material steel = Surface(new Color32(151, 159, 161, 255), .18f, 29, .49f, .56f);
+            Box("Washing machine cabinet", washer, new Vector3(.70f, 1.06f, .89f), enamel, SolidLayer);
+            Box("Washer kick plate", washer + new Vector3(.34f, -.45f, 0),
+                new Vector3(.041f, .09f, .82f), steel);
             Box("Washer controls", washer + new Vector3(.353f, .39f, 0),
                 new Vector3(.025f, .135f, .78f), dark);
-            var door = Cylinder("Washer glass door", washer + new Vector3(.356f, -.03f, 0),
-                new Vector3(.26f, .038f, .26f), window);
-            door.transform.rotation = Quaternion.Euler(0, 0, 90);
-            Box("Laundry hamper", new Vector3(-13.82f, .30f, 5.97f),
-                new Vector3(.62f, .60f, .69f), oak, SolidLayer);
-            Sign("LAUNDRY", new Vector3(-13.77f, 1.40f, 4.79f), .18f, Color.white);
-            laundryStatus = Sign("Ready", new Vector3(-13.77f, 1.23f, 4.79f), .13f, Color.white);
-            laundryStock = Sign("Bags 0   Soap 0", new Vector3(-13.77f, 1.08f, 4.79f), .115f, Color.white);
-            storedVacuum = BuildVacuum("Stored vacuum", new Vector3(-13.96f, 0, 4.48f));
+            Cylinder("Washer program dial", washer + new Vector3(.38f, .39f, -.24f),
+                new Vector3(.092f, .027f, .092f), steel).transform.rotation = Quaternion.Euler(0, 0, 90);
+            Cylinder("Washer gasket", washer + new Vector3(.361f, -.03f, 0),
+                new Vector3(.57f, .043f, .57f), dark).transform.rotation = Quaternion.Euler(0, 0, 90);
+            Cylinder("Washer drum glass", washer + new Vector3(.406f, -.03f, 0),
+                new Vector3(.46f, .032f, .46f), window).transform.rotation = Quaternion.Euler(0, 0, 90);
+            Vector3 dryer = washer + new Vector3(0, -.035f, -.94f);
+            Box("Dryer cabinet", dryer, new Vector3(.67f, 1.01f, .84f), enamel, SolidLayer);
+            Box("Dryer controls", dryer + new Vector3(.342f, .35f, 0),
+                new Vector3(.033f, .127f, .78f), dark);
+            Box("Dryer door inset", dryer + new Vector3(.35f, -.06f, 0),
+                new Vector3(.042f, .51f, .58f), steel);
+            Box("Dryer handle", dryer + new Vector3(.385f, .11f, .13f), new Vector3(.042f, .045f, .22f), trim);
+            Box("Laundry hamper", new Vector3(-16.18f, .31f, 7.34f),
+                new Vector3(.63f, .60f, .63f), oak, SolidLayer);
+            Box("Hamper rim", new Vector3(-16.18f, .62f, 7.34f),
+                new Vector3(.65f, .05f, .65f), trim);
+            Box("Washer conduit", new Vector3(-16.77f, 1.46f, 6.62f),
+                new Vector3(.065f, .92f, .044f), steel);
+            Sign("LAUNDRY", new Vector3(-16.16f, 1.52f, 6.02f), .16f, Color.white);
+            laundryStatus = Sign("Ready", new Vector3(-16.16f, 1.33f, 6.02f), .12f, Color.white);
+            laundryStock = Sign("Bags 0   Soap 0", new Vector3(-16.16f, 1.16f, 6.02f), .11f, Color.white);
+            storedVacuum = BuildVacuum("Stored vacuum", new Vector3(-12.69f, 0, 5.29f));
             storedVacuum.gameObject.SetActive(false);
 
             housekeepingCart = Node("Housekeeping cart", CartStation);
@@ -132,6 +222,10 @@ namespace DesertLantern
             Piece(housekeepingCart, "Folded linens", new Vector3(-.09f, .80f, .04f), new Vector3(.18f, .08f, .26f), linen);
             Piece(housekeepingCart, "Disinfectant bottle", new Vector3(.12f, .87f, -.11f), new Vector3(.08f, .16f, .08f), teal);
             Piece(housekeepingCart, "Roll of bags", new Vector3(.08f, .81f, .11f), new Vector3(.10f, .09f, .17f), dark);
+            Piece(housekeepingCart, "Canvas laundry bag", new Vector3(-.236f, .42f, .03f),
+                new Vector3(.12f, .52f, .44f), siding);
+            Piece(housekeepingCart, "Canvas bag hem", new Vector3(-.24f, .684f, .03f),
+                new Vector3(.13f, .028f, .45f), oak);
             for (int corner = 0; corner < 4; corner++)
             {
                 float x = corner % 2 == 0 ? -.17f : .17f;
@@ -220,7 +314,7 @@ namespace DesertLantern
                     bool visible = service.TaskPending(room, task);
                     if (task == CleaningTask.MakeBeds)
                         visible &= !service.TaskPending(room, CleaningTask.Strip);
-                    roomMess[room, i].SetActive(visible);
+                    roomMess[room, i]?.SetActive(visible);
                 }
             }
             if (storedVacuum.gameObject.activeSelf != (service.Vacuums > 0))

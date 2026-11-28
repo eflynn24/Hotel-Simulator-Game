@@ -6,12 +6,14 @@ This Unity 6 prototype starts over a 3D view of the county. Select
 - Walk with **WASD** or **arrow keys**, hold **Shift** to run, and drag with
   the **right mouse button** to orbit the camera. You can also click a spot
   in the parking lot to walk to it.
-- Visit the **Front Office**, which you can walk inside. Press **E** at the
-  entrance or use the office marker to check in the waiting guest. Walk to
-  the highlighted door and give your guest time to follow.
-- Start with **$230**. Guiding a guest to their room adds **$65** once.
-  Follow the luggage prompt to the guest's car, pick up the case with **E**
-  and set it down inside the assigned room for a **$10** tip.
+- Visit the **Front Office** to receive bookings and check in guests. Once
+  you hand over the key, the guest goes to the assigned room on their own.
+- Start with **$230**. Check-in collects the quoted room charge and a
+  refundable deposit. Follow the luggage prompt to the guest's car, pick up
+  the case with **E**, and set it down inside the assigned room for a tip.
+- Open the reception computer with **E**. **Overview** shows arrivals,
+  departures, room readiness, guest requests, inventory and finances.
+  Click a summary or alert to see its management screen.
 - Use the reception computer's **Bookings** tab. Pick a date and room on the
   **Room calendar**, adjust the stay length or special request, then confirm.
   The **Arrivals** and **Departures** lists show each day's activity, and
@@ -30,28 +32,35 @@ This Unity 6 prototype starts over a 3D view of the county. Select
 - A full motel day takes four real minutes at normal speed. Use the HUD's
   **Time x1** button to cycle through 2x, 4x, and 8x. The headless LAN host
   pauses the clock while no players are connected.
-- Order cleaning kits, towels, or linen under **Supplies**. Orders charge
-  cash immediately and arrive after 72 motel minutes. Pick up the crate at
-  the delivery bay with **E**, then use **E** at the shelves inside reception
-  to add it to stock. The shelves show counts for all three supplies.
-  One outstanding order is allowed.
-- Guests request towels by phone or in person. Answer the ringing desk phone
-  or talk to the guest in reception. Check **Guests** to see their room, then
-  visit the guest and press **E** to give them a towel from stock.
+- Press **N** to open the **Manager’s notebook** from anywhere at the motel.
+  Open a task to see the location, supplies, deadline and next step. Pin
+  one to the HUD, toggle its waypoint, or take an eligible task over from
+  staff. Release it to allow staff or a coworker to take over. **Upcoming**
+  shows scheduled work and **History** shows recent outcomes.
+- Order through **Supplies** at reception or from a low-stock task in the
+  notebook. Standard orders arrive after **30 motel minutes**, and you can
+  place additional orders while earlier ones are pending. Different
+  players can carry separate crates at the same time. Pick up a crate
+  at the delivery bay with **E** and stock it at the shelves in
+  **Housekeeping**, next to reception.
+- Accept a guest request in the notebook, collect any needed supplies
+  from the housekeeping shelves, then deliver them to the guest. A claim
+  reserves the task for the assigned player.
 - Hire a bellhop under **Staff** for $55 to collect and deliver luggage.
-  Use **Guests** to sell TV access or a room-service meal to checked-in rooms.
+  Press **I** at an occupied room door to sell TV access or a room-service meal.
+  The exterior stairs at the right end of the wing lead to rooms 5–8.
 - Open or close a nearby room door with **E**. Press **I** near it to check
   occupancy. **Menu** or **Escape** opens the display settings.
   **Back to map** returns to the county view.
 
-- After checkout, the room is marked **dirty** and skips the arrival queue.
-  Open the room and use the housekeeping list or press **E** beside a task.
-  Bag trash before vacuuming, wipe the tabletop with a cleaning kit, strip
-  both beds, then remake them with two clean linen sets.
-- Order trash bags, a reusable vacuum, cleaning kits, detergent, and linens
-  from **Supplies**. Start a wash at the reception laundry station with
-  **E**. It uses one detergent and returns up to four used linens and
-  towels to clean stock after 90 motel minutes.
+- Checkout returns the room key and opens a housekeeping checklist. Load
+  the cart in **Housekeeping**, then use the checklist or press **E** beside
+  a task. Room preparation includes linens, bathroom cleaning, floors,
+  and restocking towels and toiletries. The checklist shows progress
+  and the next confirmed arrival.
+- Start the washer in **Housekeeping** with **E**. A load uses one
+  detergent and returns up to four used linens and towels to clean stock
+  after 90 motel minutes.
 
 
 1. Add this folder from disk in Unity Hub and open it with Unity 6 (6000.0).

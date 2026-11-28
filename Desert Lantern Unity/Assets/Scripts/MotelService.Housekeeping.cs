@@ -3,11 +3,11 @@ using Unity.Netcode;
 
 namespace DesertLantern
 {
-    internal enum CleaningTask : byte { Trash, Wipe, Vacuum, Strip, MakeBeds, Mop, Bathroom, Towels }
+    internal enum CleaningTask : byte { Trash, Wipe, Vacuum, Strip, MakeBeds, Mop, Bathroom, Towels, Restock }
 
     internal partial struct MotelService
     {
-        internal const int CleaningTaskCount = 8;
+        internal const int CleaningTaskCount = 9;
         private const byte FullCleaningMask = byte.MaxValue;
         public ushort VisitedRooms;
         public ushort ActiveReservations;
@@ -25,6 +25,8 @@ namespace DesertLantern
         public bool CartInUse;
         public ulong CartCarrier;
         public byte CartBags, CartLinen, CartDisinfectant;
+        private byte cartTowels, cartToiletries;
+        private ushort restockRooms, restockedRooms;
 
         public void ToggleHousekeepingCart(ulong worker)
         {
@@ -39,6 +41,10 @@ namespace DesertLantern
             CartBags = (byte)System.Math.Min(2, TrashBags);
             CartLinen = (byte)System.Math.Min(4, LinenSets);
             CartDisinfectant = (byte)System.Math.Min(2, Disinfectant);
+            cartTowels = (byte)System.Math.Min(2, Towels);
+            cartToiletries = (byte)System.Math.Min(2, Toiletries);
+            Towels -= cartTowels;
+            Toiletries -= cartToiletries;
             TrashBags -= CartBags;
             LinenSets -= CartLinen;
             Disinfectant -= CartDisinfectant;
@@ -51,6 +57,9 @@ namespace DesertLantern
             TrashBags += CartBags;
             LinenSets += CartLinen;
             Disinfectant += CartDisinfectant;
+            Towels += cartTowels;
+            Toiletries += cartToiletries;
+            cartTowels = cartToiletries = 0;
             CartBags = CartLinen = CartDisinfectant = 0;
             CartCarrier = 0;
             CartInUse = false;
@@ -62,6 +71,7 @@ namespace DesertLantern
                 return 0;
             return task switch
             {
+                CleaningTask.Restock when cartTowels > 0 && cartToiletries > 0 => 1,
                 CleaningTask.Trash when CartBags > 0 => 1,
                 CleaningTask.Bathroom when CartDisinfectant > 0 => 1,
                 CleaningTask.MakeBeds when CartLinen >= 2 => 2,
@@ -73,6 +83,12 @@ namespace DesertLantern
         {
             switch (task)
             {
+                case CleaningTask.Restock:
+                    cartTowels -= (byte)units;
+                    cartToiletries -= (byte)units;
+                    Towels += units;
+                    Toiletries += units;
+                    break;
                 case CleaningTask.Trash:
                     CartBags = (byte)(CartBags - units);
                     TrashBags += units;
@@ -90,6 +106,17 @@ namespace DesertLantern
 
         public bool CanCleanFor(int room, CleaningTask task, ulong worker)
         {
+            if (!CanWorkOperation(OperationKind.Cleaning, room, GuestId(room), worker))
+                return false;
+            if (task is CleaningTask.Trash or CleaningTask.Wipe or CleaningTask.Vacuum or
+                CleaningTask.MakeBeds or CleaningTask.Bathroom or CleaningTask.Restock)
+            {
+                if (!CartInUse || CartCarrier != worker)
+                    return false;
+                if ((task is CleaningTask.Trash or CleaningTask.MakeBeds or CleaningTask.Bathroom or CleaningTask.Restock) &&
+                    CartUnits(task, worker) == 0)
+                    return false;
+            }
             MotelService available = this;
             available.TransferCartUnits(task, CartUnits(task, worker));
             return available.CanClean(room, task);
@@ -104,7 +131,8 @@ namespace DesertLantern
         }
         public bool DoNotDisturb(int room) => (doNotDisturb & (1 << room)) != 0;
         public bool HousekeepingRequested(int room) => (housekeepingRequests & (1 << room)) != 0;
-        public bool CleaningCompleted(int room, CleaningTask task) => (completedCleaning[room] & TaskBit(task)) != 0;
+        public bool CleaningCompleted(int room, CleaningTask task) => task == CleaningTask.Restock
+            ? (restockedRooms & (1 << room)) != 0 : (completedCleaning[room] & TaskBit(task)) != 0;
         public int Cleanliness(int room)
         {
             int dirty = 0;
@@ -155,11 +183,12 @@ namespace DesertLantern
         }
 
         public bool LaundryRunning => laundryDue != 0;
-        public bool RoomDirty(int room) => cleaningTasks[room] != 0;
+        public bool RoomDirty(int room) => cleaningTasks[room] != 0 || (restockRooms & (1 << room)) != 0;
 
         private static byte TaskBit(CleaningTask task) => (byte)(1 << (int)task);
 
-        public bool TaskPending(int room, CleaningTask task) => (cleaningTasks[room] & TaskBit(task)) != 0;
+        public bool TaskPending(int room, CleaningTask task) => task == CleaningTask.Restock
+            ? (restockRooms & (1 << room)) != 0 : (cleaningTasks[room] & TaskBit(task)) != 0;
 
         public bool CanClean(int room, CleaningTask task)
         {
@@ -173,6 +202,7 @@ namespace DesertLantern
                 CleaningTask.Vacuum => Vacuums > 0 && !TaskPending(room, CleaningTask.Trash),
                 CleaningTask.MakeBeds => LinenSets >= 2 && !TaskPending(room, CleaningTask.Strip),
                 CleaningTask.Strip => true,
+                CleaningTask.Restock => Towels > 0 && Toiletries > 0 && !TaskPending(room, CleaningTask.Towels),
                 CleaningTask.Bathroom => Disinfectant > 0,
                 CleaningTask.Mop or CleaningTask.Towels => true,
                 _ => false
@@ -190,11 +220,21 @@ namespace DesertLantern
                 case CleaningTask.Towels: DirtyTowels++; break;
                 case CleaningTask.Strip: DirtyLinens += 2; break;
                 case CleaningTask.MakeBeds: LinenSets -= 2; break;
+                case CleaningTask.Restock:
+                    Towels--;
+                    Toiletries--;
+                    restockRooms &= (ushort)~(1 << room);
+                    restockedRooms |= (ushort)(1 << room);
+                    break;
             }
-            cleaningTasks[room] &= (byte)~TaskBit(task);
-            completedCleaning[room] |= TaskBit(task);
+            if (task != CleaningTask.Restock)
+            {
+                cleaningTasks[room] &= (byte)~TaskBit(task);
+                completedCleaning[room] |= TaskBit(task);
+            }
             if (!RoomDirty(room))
             {
+                FinishOperation(OperationKind.Cleaning, room, GuestId(room));
                 housekeepingRequests &= (ushort)~(1 << room);
                 if ((ActiveRooms & (1 << room)) == 0 && !ForgottenItem(room))
                     UnlockedDoors &= (ushort)~(1 << room);
@@ -206,6 +246,8 @@ namespace DesertLantern
             int bit = 1 << room;
             doNotDisturb &= (ushort)~bit;
             housekeepingRequests &= (ushort)~bit;
+            restockRooms |= (ushort)bit;
+            restockedRooms &= (ushort)~bit;
             cleaningTasks[room] = FullCleaningMask;
             completedCleaning[room] = 0;
         }
@@ -226,6 +268,7 @@ namespace DesertLantern
         {
             if (WasherBroken || !LaundryRunning || ClockMinute < laundryDue)
                 return;
+            FinishOperation(OperationKind.Laundry, 0, 0);
             LinenSets += washingLinens;
             Towels += washingTowels;
             washingLinens = washingTowels = laundryDue = 0;

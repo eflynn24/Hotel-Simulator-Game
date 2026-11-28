@@ -6,8 +6,9 @@ namespace DesertLantern
     {
         private const byte PurchaseAction = 4;
         private bool computerOpen;
-        private int computerTab = ReservationsTab;
-        private const int ReservationsTab = 1;
+        private const int OverviewTab = 0, ReservationsTab = 1, SuppliesTab = 2, TasksTab = 3,
+            StaffTab = 4, ReportsTab = 5, ExpansionTab = 6;
+        private int computerTab = OverviewTab;
 
         private static bool AtComputer(Vector3 position) =>
             InsideOffice(position) && position.z >= 7.98f &&
@@ -73,17 +74,32 @@ namespace DesertLantern
             {
                 var tabRect = new Rect(x + (tabWidth + 6 * scale) * tab, panel.y + 57 * scale, tabWidth, 33 * scale);
                 bool active = tab == computerTab;
-                if (BookingButton(tabRect, ComputerTabs[tab], active ? DeskPriority : DeskSurface, tab))
+                if (BookingButton(tabRect, ComputerTabs[tab], active ? DeskPriority : DeskSurface, TabIcons[tab]))
+                {
                     computerTab = tab;
+                    if (tab == TasksTab)
+                        inspectedTask = null;
+                }
             }
             Fill(new Rect(x, panel.y + 98 * scale, width, scale), DeskTrim);
 
             computerTheme = true;
             try
             {
+                var workspace = new Rect(x, panel.y + 106 * scale, width, 430 * scale);
+                if (computerTab == OverviewTab)
+                {
+                    DrawOperationsOverview(workspace, scale);
+                    return;
+                }
                 if (computerTab == ReservationsTab)
                 {
-                    DrawReservationWorkspace(new Rect(x, panel.y + 106 * scale, width, 430 * scale), scale);
+                    DrawReservationWorkspace(workspace, scale);
+                    return;
+                }
+                if (computerTab == TasksTab)
+                {
+                    DrawNotebook(InsetDesk(workspace, 8 * scale), scale);
                     return;
                 }
 
@@ -95,10 +111,10 @@ namespace DesertLantern
                 panel.y = body.y - 61 * scale;
                 switch (computerTab)
                 {
-                    case 0: DrawSupplyRows(panel, body.x, body.width, scale); break;
-                    case 2: DrawStaff(panel, body.x, body.width, scale); break;
-                    case 3: DrawFinancialReport(panel, body.x, body.width, scale); break;
-                    case 4: DrawExpansionOffice(panel, body.x, body.width, scale); break;
+                    case SuppliesTab: DrawSupplyRows(panel, body.x, body.width, scale); break;
+                    case StaffTab: DrawStaff(panel, body.x, body.width, scale); break;
+                    case ReportsTab: DrawFinancialReport(panel, body.x, body.width, scale); break;
+                    case ExpansionTab: DrawExpansionOffice(panel, body.x, body.width, scale); break;
                 }
             }
             finally
@@ -110,7 +126,8 @@ namespace DesertLantern
         private bool computerTheme;
         private GUIStyle computerHeading;
         private static readonly string[] ComputerTabs =
-            { "Supplies", "Bookings", "Staff", "Reports", "Expansion" };
+            { "Overview", "Bookings", "Supplies", "Tasks", "Staff", "Reports", "Expansion" };
+        private static readonly int[] TabIcons = { 5, 1, 0, 5, 2, 3, 4 };
 
         private const byte BookRoomAction = 18;
         private const byte EditBookingAction = 19;
@@ -121,9 +138,19 @@ namespace DesertLantern
         private const byte AcceptPhoneAction = 32;
         private bool deskCheckInApproved;
 
+        private void OpenComputer(int tab = OverviewTab, bool trackOrders = false)
+        {
+            queuedComputerTab = -1;
+            computerTab = tab;
+            orderHistory = trackOrders;
+            if (tab == TasksTab)
+                inspectedTask = null;
+            SetComputerVisible(true);
+        }
+
         private void OpenDeskReservations()
         {
-            computerTab = ReservationsTab;
+            OpenComputer(ReservationsTab);
             MotelService service = Service;
             if (GuestWaiting && service.DeskArrivalReady(Occupied))
             {
@@ -137,7 +164,6 @@ namespace DesertLantern
             }
             else
                 reservationView = ReservationView.Calendar;
-            SetComputerVisible(true);
         }
 
         private void HandleDeskAction(byte action, Vector3 data, Vector3 point)
@@ -194,7 +220,13 @@ namespace DesertLantern
 
         private void ReceiveBookingResult(byte action, bool success, Vector3 selection)
         {
-            if (action == BookRoomAction)
+            if (action == QuickOrderAction)
+            {
+                quickOrderPending = false;
+                if (reorderItem == (int)selection.x)
+                    quickOrderStatus = success ? "Order placed · Pick up at the delivery bay" : "Order could not be placed";
+            }
+            else if (action == BookRoomAction)
             {
                 bookingFeedback = success ? "Reservation confirmed" : "Room unavailable for those dates";
                 if (success && reservationView == ReservationView.New)
@@ -356,23 +388,33 @@ namespace DesertLantern
 
         private static readonly string[] StaffNames = CountyPortfolio.StaffRoles;
         private Vector2 staffScroll;
+        private readonly System.Collections.Generic.List<OperationTask> employeeTasks = new System.Collections.Generic.List<OperationTask>();
 
         private void DrawStaff(Rect panel, float x, float width, float scale)
         {
             MotelService service = Service;
+            service.ReadOperations(employeeTasks);
             DrawDeskSummary(new Rect(x, panel.y + 108 * scale, width, 30 * scale), scale,
                 $"Cash ${service.Cash}    ·    ${MotelService.StaffWage}/day per employee");
             var viewport = new Rect(x, panel.y + 145 * scale, width, 270 * scale);
             float rowWidth = width - 29 * scale;
-            staffScroll = GUI.BeginScrollView(viewport, staffScroll, new Rect(0, 0, rowWidth, StaffNames.Length * 45 * scale));
+            staffScroll = GUI.BeginScrollView(viewport, staffScroll, new Rect(0, 0, rowWidth, StaffNames.Length * 56 * scale));
             x = 0;
             width = rowWidth;
             for (int role = 0; role < StaffNames.Length; role++)
             {
-                float y = role * 45 * scale;
+                float y = role * 56 * scale;
                 bool hired = service.StaffHired(role);
-                DeskFrame(new Rect(x, y, width, 37 * scale), DeskSurface, DeskTrim, 4 * scale, scale);
-                DrawFittedText(new Rect(x + 8 * scale, y, width - 280 * scale, 34 * scale), StaffNames[role], detail);
+                DeskFrame(new Rect(x, y, width, 51 * scale), DeskSurface, DeskTrim, 4 * scale, scale);
+                DrawFittedText(new Rect(x + 8 * scale, y, width - 280 * scale, 28 * scale), StaffNames[role], detail);
+                string assignment = hired ? "Available for work" : "";
+                foreach (OperationTask task in employeeTasks)
+                    if ((int?)task.Role == role)
+                    {
+                        assignment = $"{task.Title} · {OperationStatusLabel(task.Status)}";
+                        break;
+                    }
+                DrawFittedText(new Rect(x + 8 * scale, y + 27 * scale, width - 280 * scale, 20 * scale), assignment, label);
                 DrawFittedText(new Rect(x + width - 272 * scale, y, 92 * scale, 34 * scale),
                     hired ? "On staff" : "Vacancy", label);
                 GUI.enabled = hired;
@@ -407,31 +449,31 @@ namespace DesertLantern
         {
             MotelService service = Service;
             DrawDeskSummary(new Rect(x, panel.y + 105 * scale, width - 130 * scale, 28 * scale), scale,
-                $"Cash ${service.Cash}    ·    {service.PendingOrderCount} open orders");
+                $"Cash ${service.Cash}   ·   {service.PendingOrderCount} open orders   ·   {MotelService.StandardDeliveryMinutes}m delivery");
             if (DrawButton(new Rect(x + width - 122 * scale, panel.y + 105 * scale, 122 * scale, 28 * scale),
                 orderHistory ? "Shop" : "Track orders"))
                 orderHistory = !orderHistory;
 
+            DrawFittedText(new Rect(x, panel.y + 137 * scale, width, 26 * scale),
+                $"Clean: {service.Towels} towels · {service.LinenSets} linen sets   |   Dirty: {service.DirtyTowels} towels · {service.DirtyLinens} linen sets   |   Washing: {service.ExpectedLaundryUnits}", label);
             if (orderHistory)
             {
                 int lines = service.PendingOrderCount + service.CompletedOrderCount * 2;
-                var viewport = new Rect(x, panel.y + 138 * scale, width, 272 * scale);
+                var viewport = new Rect(x, panel.y + 166 * scale, width, 243 * scale);
                 orderScroll = GUI.BeginScrollView(viewport, orderScroll,
                     new Rect(0, 0, width - 20 * scale, Mathf.Max(viewport.height, lines * 27 * scale)));
                 int line = 0;
-                if (service.PendingOrderCount > 0)
+                for (int index = 0; index < service.PendingOrderCount; index++)
                 {
-                    string status = service.Delivery == SupplyDelivery.InTransit
-                        ? $"Due {MotelService.DisplayTime(service.DeliveryDue)}" : service.Delivery == SupplyDelivery.AtBay
-                        ? "Ready at the bay" : "Being carried to storage";
+                    SupplyOrder order = service.SupplyOrderAt(index);
+                    string status = order.Status switch
+                    {
+                        SupplyDelivery.AtBay => "Ready at the bay",
+                        SupplyDelivery.Carried => "Being carried to storage",
+                        _ => $"Due {MotelService.DisplayTime(order.Due)}"
+                    };
                     DrawFittedText(new Rect(0, line++ * 27 * scale, width, 27 * scale),
-                        $"#{service.ActiveOrderNumber} · {status}", label);
-                }
-                for (int order = 0; order < service.PendingOrderCount - 1; order++)
-                {
-                    int due = service.QueuedOrderDue(order);
-                    DrawFittedText(new Rect(0, line++ * 27 * scale, width, 27 * scale),
-                        $"#{service.QueuedOrderNumber(order)} · {(due <= service.ClockMinute ? "Waiting at the bay" : MotelService.DisplayTime(due))}", label);
+                        $"#{order.Number} · {status}", label);
                 }
                 for (int order = service.CompletedOrderCount - 1; order >= 0; order--)
                 {
@@ -454,7 +496,7 @@ namespace DesertLantern
                 return;
             }
 
-            var catalogArea = new Rect(x, panel.y + 138 * scale, width, 233 * scale);
+            var catalogArea = new Rect(x, panel.y + 166 * scale, width, 205 * scale);
             supplyScroll = GUI.BeginScrollView(catalogArea, supplyScroll,
                 new Rect(0, 0, width - 29 * scale, MotelService.Catalog.Length * 46 * scale));
             x = 0;
@@ -469,15 +511,17 @@ namespace DesertLantern
                 DrawFittedText(new Rect(x + 8 * scale, y, width - 160 * scale, 25 * scale),
                     $"{offer.Name} ×{offer.Quantity} · ${offer.Price}", detail);
                 int stock = service.Stock(item);
+                int packs = service.RecommendedRestockPacks(item);
+                string kind = item is 1 or 2 ? "clean" : item is 0 or 4 ? "reusable" : "consumable";
                 DrawFittedText(new Rect(x + 8 * scale, y + 20 * scale, width - 158 * scale, 23 * scale),
-                    stock <= 1 ? $"Low stock · {stock} left" : $"{stock} in stock", label);
+                    $"{stock} {kind} · {service.IncomingStock(item)} incoming" + (packs > 0 ? $" · Recommend {packs} {(packs == 1 ? "pack" : "packs")}" : ""), label);
                 GUI.enabled = quantity > 0;
                 if (DrawButton(new Rect(x + width - 135 * scale, y + 3 * scale, 34 * scale, 29 * scale), "-"))
                     supplyCart -= step;
                 GUI.enabled = true;
                 DrawFittedText(new Rect(x + width - 89 * scale, y + 3 * scale, 40 * scale, 29 * scale),
                     quantity.ToString(), label);
-                GUI.enabled = item == 4 ? quantity == 0 && stock == 0 : quantity < MotelService.MaxCartQuantity;
+                GUI.enabled = item == 4 ? quantity == 0 && stock == 0 && service.IncomingStock(item) == 0 : quantity < MotelService.MaxCartQuantity;
                 if (DrawButton(new Rect(x + width - 35 * scale, y + 3 * scale, 35 * scale, 29 * scale), "+"))
                     supplyCart += step;
                 GUI.enabled = true;

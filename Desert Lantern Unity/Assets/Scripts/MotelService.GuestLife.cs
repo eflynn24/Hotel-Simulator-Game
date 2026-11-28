@@ -60,6 +60,7 @@ namespace DesertLantern
             if (!ForgottenItem(room))
                 return;
             int bit = 1 << room;
+            FinishOperation(OperationKind.LostProperty, room, GuestId(room));
             unattendedProperty &= (ushort)~bit;
             if (!RoomDirty(room) && (ActiveRooms & bit) == 0)
                 UnlockedDoors &= (ushort)~bit;
@@ -102,6 +103,8 @@ namespace DesertLantern
                     CompleteCheckout(room, true);
                     break;
             }
+            if (issue != GuestIssue.LateDeparture && OutstandingIssue(room) != issue)
+                FinishOperation(OperationKind.Guest, room, GuestId(room));
         }
 
         private void AdvanceGuestLife(int previous)

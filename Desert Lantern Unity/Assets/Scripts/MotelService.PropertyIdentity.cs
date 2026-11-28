@@ -50,9 +50,15 @@ namespace DesertLantern
             return true;
         }
 
-        public bool OwnsDelivery(PropertyDelivery delivery) =>
-            Delivery != SupplyDelivery.None && delivery.Property == property &&
-            delivery.Dock == DeliveryDock.SupplyBay && delivery.Order == ActiveOrderNumber;
+        public bool OwnsDelivery(PropertyDelivery delivery)
+        {
+            if (delivery.Property != property || delivery.Dock != DeliveryDock.SupplyBay)
+                return false;
+            for (int index = 0; index < PendingOrderCount; index++)
+                if (SupplyOrderAt(index).Number == delivery.Order)
+                    return true;
+            return false;
+        }
 
         // The saved record owns the property ID. Keep the original payload readable
         // so an ordinal-keyed save can move into the new envelope without data loss.
@@ -68,6 +74,9 @@ namespace DesertLantern
                     Service.SerializeDecisions(serializer);
                     Service.SerializePhone(serializer);
                     Service.SerializeBookingDetails(serializer);
+                    Service.SerializeServiceTasks(serializer);
+                    Service.SerializeOperationQueue(serializer);
+                    Service.SerializeParallelDeliveries(serializer);
                 }
                 else
                 {
@@ -80,6 +89,16 @@ namespace DesertLantern
                         Service.SerializeBookingDetails(serializer);
                     else
                         Service.stayBookingDetails.Length = RoomCount;
+                    if (reader.Position < reader.Length)
+                        Service.SerializeServiceTasks(serializer);
+                    else
+                        Service.guestTaskOwners.Length = RoomCount;
+                    if (reader.Position < reader.Length)
+                        Service.SerializeOperationQueue(serializer);
+                    if (reader.Position < reader.Length)
+                        Service.SerializeParallelDeliveries(serializer);
+                    else
+                        Service.EnsureQueuedSupplyIds();
                 }
             }
 

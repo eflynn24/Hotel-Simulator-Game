@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: 0f223f4ec7ef4a57bf669cf485dd53ae
+TextureImporter:
+  mipmaps:
+    enableMipMap: 1
+    sRGBTexture: 1
+  textureSettings:
+    filterMode: 2
+    aniso: 8
+    wrapU: 0
+    wrapV: 0
+    wrapW: 0
+  alphaUsage: 1
+  alphaIsTransparency: 0

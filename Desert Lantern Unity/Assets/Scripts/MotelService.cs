@@ -93,6 +93,7 @@ namespace DesertLantern
                 service.completedCleaning.Add(0);
             }
             service.stayBookingDetails.Length = RoomCount;
+            service.guestTaskOwners.Length = RoomCount;
             service.InitializePropertyCare();
             service.InitializeManagement();
             return service;
@@ -209,6 +210,8 @@ namespace DesertLantern
                     : start < ClockMinute) ||
                 !RoomAvailable(ReservationRoom(index), start, ReservationEnd(index), index))
                 return false;
+            if (ReservationChannel(index) != BookingChannel.WalkIn)
+                FinishOperation(OperationKind.Approval, ReservationRoom(index), start);
             reservations[index * 4 + 3] &= ~PendingReservation;
             return true;
         }
@@ -229,6 +232,15 @@ namespace DesertLantern
                 if (ReservationRoom(i) == room && (next < 0 || ReservationStart(i) < ReservationStart(next)))
                     next = i;
             return next;
+        }
+
+        public int NextConfirmedArrival(int room)
+        {
+            int next = int.MaxValue;
+            for (int index = 0; index < ReservationCount; index++)
+                if (ReservationRoom(index) == room && !ReservationPending(index))
+                    next = Math.Min(next, ReservationStart(index));
+            return next == int.MaxValue ? -1 : next;
         }
 
         public int BookingStart(int room) => ReservationStart(NextBooking(room));
@@ -286,7 +298,7 @@ namespace DesertLantern
             {
                 if (!ReservationPending(index) && ReservationStart(index) - ClockMinute <= 120)
                     Post(Account.Adjustments, 10);
-                RemoveBooking(index);
+                RemoveBooking(index, cancelled: true);
                 return true;
             }
 
@@ -330,8 +342,11 @@ namespace DesertLantern
             return true;
         }
 
-        private void RemoveBooking(int index)
+        private void RemoveBooking(int index, bool cancelled = false)
         {
+            if (cancelled)
+                FinishOperation(ReservationPending(index) && ReservationChannel(index) != BookingChannel.WalkIn
+                    ? OperationKind.Approval : OperationKind.Reception, ReservationRoom(index), ReservationStart(index), true);
             for (int field = 0; field < 4; field++)
                 reservations.RemoveAt(index * 4);
         }
@@ -399,7 +414,7 @@ namespace DesertLantern
             {
                 if (ReservationEnd(index) <= now || ReservationPending(index) && ReservationStart(index) +
                     (ReservationChannel(index) == BookingChannel.WalkIn ? WalkInPatience - 1 : 0) < now)
-                    RemoveBooking(index);
+                    RemoveBooking(index, cancelled: true);
                 else if (previous < ReservationStart(index) && ReservationStart(index) <= now)
                     ClockSpeed = 1;
             }
@@ -482,6 +497,7 @@ namespace DesertLantern
             int bit = 1 << room;
             if ((ActiveRooms & bit) == 0)
                 return;
+            FinishOperation(OperationKind.Checkout, room, GuestId(room), !assisted);
             completedStays++;
             RoomServiceCheckout(room);
             RecordReview(room, assisted);
@@ -496,6 +512,7 @@ namespace DesertLantern
                 MissedCheckouts |= (ushort)bit;
             if (Bag != LuggageStatus.None && BagRoom == room)
             {
+                FinishOperation(OperationKind.Luggage, room, GuestId(room), true);
                 Bag = LuggageStatus.None;
                 Carrier = 0;
             }
@@ -530,7 +547,7 @@ namespace DesertLantern
 
         public bool RoomReadyForGuest(int room) =>
             RoomBuilt(room) && ((ActiveRooms | UnlockedDoors) & (1 << room)) == 0 &&
-            !RoomDirty(room) && !RoomUnusable(room) && !ForgottenItem(room);
+            !RoomDirty(room) && !RoomUnusable(room) && !ForgottenItem(room) && !UtilityOutage;
 
         public bool ArrivalReady(int room) => RoomReadyForGuest(room) && BookingDue(room);
 
@@ -564,39 +581,29 @@ namespace DesertLantern
 
         public void AcknowledgeRequest(int room) => KnownRequests |= (ushort)(1 << room);
 
-        public bool RequestSuppliesAvailable(int room) => KindOfRequest(room) switch
-        {
-            GuestRequestKind.Towel => Towels > 0,
-            GuestRequestKind.Pillow => Pillows > 0,
-            GuestRequestKind.Toiletries => Toiletries > 0,
-            _ => true
-        };
+        public bool RequestSuppliesAvailable(int room) => RequestItemCollected(room) ||
+            RequestStock(room) >= RequiredRequestUnits(room);
 
-        public void ServeRequest(int room) => TryServeRequest(room, KindOfRequest(room), 1);
+        public void ServeRequest(int room) => TryServeRequest(room, KindOfRequest(room), RequiredRequestUnits(room));
 
         public bool TryServeRequest(int room, GuestRequestKind item, int quantity)
         {
-            if ((uint)room >= RoomCapacity || !RequestOpen(room) || item != KindOfRequest(room) || quantity != 1)
+            if ((uint)room >= RoomCapacity || !RequestOpen(room) || RequestClaimed(room) ||
+                item != KindOfRequest(room) || quantity != RequiredRequestUnits(room) || !RequestSuppliesAvailable(room))
                 return false;
-            switch (KindOfRequest(room))
-            {
-                case GuestRequestKind.Towel:
-                    if (Towels <= 0) return false;
-                    Towels--;
-                    break;
-                case GuestRequestKind.Pillow:
-                    if (Pillows <= 0) return false;
-                    Pillows--;
-                    break;
-                case GuestRequestKind.Toiletries:
-                    if (Toiletries <= 0) return false;
-                    Toiletries--;
-                    break;
-            }
+            ChangeRequestStock(item, -quantity);
+            CompleteGuestRequest(room);
+            return true;
+        }
+
+        private void CompleteGuestRequest(int room)
+        {
+            FinishOperation(OperationKind.Guest, room, requestMinutes[room]);
+            if (RequestWait(room) >= 45)
+                lateGuestRequests |= (ushort)(1 << room);
             FulfilledRequests |= (ushort)(1 << room);
             satisfiedRequests |= (ushort)(1 << room);
             Post(Account.ServiceRevenue, 5);
-            return true;
         }
 
         public void HireBellhop()
@@ -641,12 +648,14 @@ namespace DesertLantern
                 ((ReservationGuestIndex(booking) + 1) << 2) | (int)ReservationChannel(booking));
             InitializeGuestProfile(room, preference, rate);
             ActiveReservations |= (ushort)bit;
+            FinishOperation(OperationKind.Reception, room, priceStarts);
             RemoveBooking(booking);
             VisitedRooms |= (ushort)bit;
             UnlockedDoors |= (ushort)bit;
             ActiveRooms |= (ushort)bit;
             Reviews &= (ushort)~bit;
             LateCheckIns &= (ushort)~bit;
+            lateGuestRequests &= (ushort)~bit;
             MissedCheckouts &= (ushort)~bit;
             DeliveredBags &= (ushort)~bit;
             KnownRequests &= (ushort)~bit;
@@ -671,7 +680,7 @@ namespace DesertLantern
 
         public bool PickUp(ulong player)
         {
-            if (Bag != LuggageStatus.InCar || (Delivery == SupplyDelivery.Carried && SupplyCarrier == player))
+            if (Bag != LuggageStatus.InCar || CarriedSupplyOrder(player) != 0)
                 return false;
             Carrier = player;
             Bag = LuggageStatus.Carried;
@@ -682,6 +691,7 @@ namespace DesertLantern
         {
             if (Bag != LuggageStatus.Carried || Carrier != player)
                 return false;
+            FinishOperation(OperationKind.Luggage, BagRoom, GuestId(BagRoom));
             DeliveredBags |= (ushort)(1 << BagRoom);
             Post(Account.ServiceRevenue, LuggageTip);
             Bag = LuggageStatus.None;
@@ -719,7 +729,7 @@ namespace DesertLantern
         private FixedList128Bytes<int> queuedDue;
         private FixedList128Bytes<int> completedOrders;
         private FixedList128Bytes<int> completedCarts;
-        public int PendingOrderCount => queuedCarts.Length + (Delivery == SupplyDelivery.None ? 0 : 1);
+        public int PendingOrderCount => queuedCarts.Length + PrimaryDeliveryCount + detachedParcels.Length;
         public int CompletedOrderCount => completedOrders.Length;
         public int ActiveOrderNumber => activeOrderNumber;
         public int CompletedOrder(int index) => completedOrders[index];
@@ -728,15 +738,16 @@ namespace DesertLantern
         {
             get
             {
-                int count = Delivery == SupplyDelivery.AtBay ? 1 : 0;
-                foreach (int due in queuedDue)
-                    if (due <= ClockMinute)
+                int count = 0;
+                for (int index = 0; index < PendingOrderCount; index++)
+                    if (SupplyOrderAt(index).Status == SupplyDelivery.AtBay)
                         count++;
                 return count;
             }
         }
         public int QueuedOrderDue(int index) => queuedDue[index];
-        public int QueuedOrderNumber(int index) => activeOrderNumber + index + 1;
+        public int QueuedOrderNumber(int index) => queuedOrderIds.Length == queuedCarts.Length ?
+            queuedOrderIds[index] : orderSequence - queuedCarts.Length + index + 1;
 
         public static int CartQuantity(int cart, int item) => (cart >> (4 * item)) & 15;
 
@@ -750,27 +761,45 @@ namespace DesertLantern
 
         public bool Order(int index) => index >= 0 && index < Catalog.Length && OrderCart(1 << (4 * index));
 
-        public bool OrderCart(int cart) => OrderCartPriced(cart, CartCost(cart), 72);
+        public const int StandardDeliveryMinutes = 30;
+        public bool OrderCart(int cart) => OrderCartPriced(cart, CartCost(cart), StandardDeliveryMinutes);
+
+        public static int MinimumStock(int item) => item switch
+        {
+            0 => 0,
+            4 => 1,
+            2 or 3 => 4,
+            _ => 2
+        };
+
+        public int IncomingStock(int item)
+        {
+            int packs = CartQuantity(deliveryCart, item);
+            foreach (int cart in queuedCarts)
+                packs += CartQuantity(cart, item);
+            foreach (SupplyParcel parcel in detachedParcels)
+                packs += CartQuantity(parcel.Cart, item);
+            return packs * Catalog[item].Quantity;
+        }
+
+        public bool LowStock(int item) => Stock(item) <= MinimumStock(item) &&
+            (item != 4 || Stock(item) == 0);
 
         private bool OrderCartPriced(int cart, int price, int minutes)
         {
-            if (cart == 0 || queuedCarts.Length >= 8 || price > Cash)
+            if (cart == 0 || PendingOrderCount >= 9 || price > Cash)
                 return false;
             for (int item = 0; item < Catalog.Length; item++)
                 if (CartQuantity(cart, item) > MaxCartQuantity)
                     return false;
-            if (CartQuantity(cart, 4) > 0)
-            {
-                if (CartQuantity(cart, 4) > 1 || Vacuums > 0 || CartQuantity(deliveryCart, 4) > 0)
-                    return false;
-                foreach (int queued in queuedCarts)
-                    if (CartQuantity(queued, 4) > 0)
-                        return false;
-            }
+            if (CartQuantity(cart, 4) > 0 && (CartQuantity(cart, 4) > 1 || Vacuums + IncomingStock(4) > 0))
+                return false;
 
+            EnsureQueuedSupplyIds();
             Post(Account.Supplies, -price);
             orderSequence++;
             queuedCarts.Add(cart);
+            queuedOrderIds.Add(orderSequence);
             queuedDue.Add(ClockMinute + minutes);
             LoadNextDelivery();
             return true;
@@ -780,11 +809,10 @@ namespace DesertLantern
         {
             if (Delivery != SupplyDelivery.None || queuedCarts.Length == 0)
                 return;
-            activeOrderNumber = orderSequence - queuedCarts.Length + 1;
+            activeOrderNumber = QueuedOrderNumber(0);
             deliveryCart = queuedCarts[0];
             DeliveryDue = queuedDue[0];
-            queuedCarts.RemoveAt(0);
-            queuedDue.RemoveAt(0);
+            RemoveQueuedSupply(0);
             Delivery = SupplyDelivery.InTransit;
             AdvanceDelivery();
         }
@@ -798,47 +826,54 @@ namespace DesertLantern
             }
         }
 
-        public void CollectSupply(ulong worker)
+        public void CollectSupply(ulong worker) => CollectSupplyOrder(NextSupplyPickup(worker), worker);
+
+        public void StoreSupply(ulong worker) => StoreSupplyOrder(CarriedSupplyOrder(worker), worker);
+
+        public bool StoreSupplyOrder(int order, ulong worker)
         {
-            if (Delivery != SupplyDelivery.AtBay || (Bag == LuggageStatus.Carried && Carrier == worker))
-                return;
-            SupplyCarrier = worker;
-            Delivery = SupplyDelivery.Carried;
+            if (order <= 0)
+                return false;
+            if (Delivery != SupplyDelivery.Carried || SupplyCarrier != worker || order != activeOrderNumber)
+                return StoreDetachedSupply(order, worker);
+            StockSupplyOrder(activeOrderNumber, deliveryCart);
+            Delivery = SupplyDelivery.None;
+            deliveryCart = 0;
+            SupplyCarrier = 0;
+            DeliveryDue = 0;
+            LoadNextDelivery();
+            return true;
         }
 
-        public void StoreSupply(ulong worker)
+        private void StockSupplyOrder(int order, int cart)
         {
-            if (Delivery != SupplyDelivery.Carried || SupplyCarrier != worker)
-                return;
-            CleaningKits += CartQuantity(deliveryCart, 0) * Catalog[0].Quantity;
-            Towels += CartQuantity(deliveryCart, 1) * Catalog[1].Quantity;
-            LinenSets += CartQuantity(deliveryCart, 2) * Catalog[2].Quantity;
-            TrashBags += CartQuantity(deliveryCart, 3) * Catalog[3].Quantity;
-            Vacuums += CartQuantity(deliveryCart, 4) * Catalog[4].Quantity;
-            Detergent += CartQuantity(deliveryCart, 5) * Catalog[5].Quantity;
-            Pillows += CartQuantity(deliveryCart, 6) * Catalog[6].Quantity;
-            Toiletries += CartQuantity(deliveryCart, 7) * Catalog[7].Quantity;
+            CleaningKits += CartQuantity(cart, 0) * Catalog[0].Quantity;
+            Towels += CartQuantity(cart, 1) * Catalog[1].Quantity;
+            LinenSets += CartQuantity(cart, 2) * Catalog[2].Quantity;
+            TrashBags += CartQuantity(cart, 3) * Catalog[3].Quantity;
+            Vacuums += CartQuantity(cart, 4) * Catalog[4].Quantity;
+            Detergent += CartQuantity(cart, 5) * Catalog[5].Quantity;
+            Pillows += CartQuantity(cart, 6) * Catalog[6].Quantity;
+            Toiletries += CartQuantity(cart, 7) * Catalog[7].Quantity;
 
             if (completedOrders.Length == 12)
             {
                 completedOrders.RemoveAt(0);
                 completedCarts.RemoveAt(0);
             }
-            completedOrders.Add(activeOrderNumber);
-            completedCarts.Add(deliveryCart);
-            Delivery = SupplyDelivery.None;
-            deliveryCart = 0;
-            SupplyCarrier = 0;
-            DeliveryDue = 0;
-            LoadNextDelivery();
+            FinishOperation(OperationKind.Delivery, 0, order);
+            completedOrders.Add(order);
+            completedCarts.Add(cart);
         }
 
         public void RecoverSupply(ulong worker)
         {
-            if (Delivery != SupplyDelivery.Carried || SupplyCarrier != worker)
-                return;
-            SupplyCarrier = 0;
-            Delivery = SupplyDelivery.AtBay;
+            if (Delivery == SupplyDelivery.Carried && SupplyCarrier == worker)
+            {
+                SupplyCarrier = 0;
+                Delivery = SupplyDelivery.AtBay;
+            }
+            ReleaseDetachedSupply(worker);
         }
 
         private void SerializeReservations<T>(BufferSerializer<T> serializer) where T : IReaderWriter
@@ -888,6 +923,9 @@ namespace DesertLantern
             SerializeDecisions(serializer);
             SerializePhone(serializer);
             SerializeBookingDetails(serializer);
+            SerializeServiceTasks(serializer);
+            SerializeOperationQueue(serializer);
+            SerializeParallelDeliveries(serializer);
         }
 
         private void SerializeState<T>(BufferSerializer<T> serializer) where T : IReaderWriter
@@ -960,6 +998,7 @@ namespace DesertLantern
             Carrier == other.Carrier && Bag == other.Bag && Delivery == other.Delivery &&
             deliveryCart == other.deliveryCart && activeOrderNumber == other.activeOrderNumber && orderSequence == other.orderSequence &&
             queuedCarts.Equals(other.queuedCarts) && queuedDue.Equals(other.queuedDue) && completedOrders.Equals(other.completedOrders) && completedCarts.Equals(other.completedCarts) && DeliveryDue.Equals(other.DeliveryDue) && SupplyCarrier == other.SupplyCarrier && HousekeepingEquals(other) && OperationsEqual(other) && PropertyCareEquals(other) && GuestLifeEquals(other) && ExpansionEquals(other) && ManagementEquals(other) && DecisionsEqual(other) && PhoneEquals(other) &&
-            stayBookingDetails.Equals(other.stayBookingDetails) && confirmedOnlineBookings == other.confirmedOnlineBookings;
+            stayBookingDetails.Equals(other.stayBookingDetails) && confirmedOnlineBookings == other.confirmedOnlineBookings &&
+            ServiceTasksEqual(other) && OperationQueueEquals(other) && ParallelDeliveriesEqual(other);
     }
 }

@@ -132,6 +132,7 @@ namespace DesertLantern
                     }
                     if (action == ExpansionAction.Operate && RoomBuilt(option) && RoomMealPending(option) && RoomMealStock > 0)
                     {
+                        FinishOperation(OperationKind.Meal, option, GuestId(option));
                         pendingMeals &= (ushort)~(1 << option);
                         MealOrders |= (ushort)(1 << option);
                         RoomMealStock--;
@@ -281,7 +282,7 @@ namespace DesertLantern
             for (int index = ReservationCount - 1; index >= 0; index--)
             {
                 if (ReservationChannel(index) == BookingChannel.Conference && ReservationStart(index) == ConferenceStart)
-                    RemoveBooking(index);
+                    RemoveBooking(index, cancelled: true);
             }
             ConferenceStart = ConferenceEnd = 0;
             conferenceRooms = 0;

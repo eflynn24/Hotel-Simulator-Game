@@ -41,16 +41,20 @@ namespace DesertLantern
             materials.Add(signMaterial);
             RefreshSignAtlas(signFont);
             Font.textureRebuilt += RefreshSignAtlas;
-            sand = Surface(new Color32(139, 136, 107, 255), .58f, 3);
-            asphalt = Surface(new Color32(70, 74, 75, 255), .83f, 7);
-            plaster = Surface(new Color32(174, 158, 132, 255), .57f, 5);
-            wood = Surface(new Color32(93, 69, 49, 255), .6f, 7);
-            teal = Surface(new Color32(73, 104, 94, 255), .62f, 10);
-            roof = Surface(new Color32(60, 61, 57, 255), .44f, 7);
-            window = Surface(new Color32(58, 61, 55, 255), .26f, 5);
+            sand = Surface(new Color32(151, 136, 112, 255), .58f, 3);
+            asphalt = Surface(new Color32(91, 81, 75, 255), .44f, 43, .08f);
+            plaster = Surface(new Color32(178, 164, 141, 255), .36f, 22, .16f);
+            wood = Surface(new Color32(97, 74, 55, 255), .43f, 15, .24f, grainStretch: .18f);
+            teal = Surface(new Color32(49, 91, 85, 255), .49f, 20, .21f);
+            roof = Surface(new Color32(75, 64, 55, 255), .57f, 15);
+            roof.SetFloat("_RoofCourses", 1);
+            window = Surface(new Color32(52, 61, 63, 255), .14f, 9, .75f);
             cream = Surface(new Color32(232, 185, 111, 255), .38f, 10);
             iron = Surface(new Color32(102, 87, 68, 255), .78f, 8);
 
+            ApplySurfaceDetail(asphalt, "Asphalt", .46f, .90f);
+            ApplySurfaceDetail(plaster, "Plaster", .34f, .62f);
+            ApplySurfaceDetail(wood, "Wood", 1.20f, .76f);
             CreateFinishes();
             Lighting(overview);
             Box("Desert floor", new Vector3(0, -.32f, 0), new Vector3(760, .6f, 760), sand);
@@ -64,9 +68,12 @@ namespace DesertLantern
             BuildUpperWalkway();
             BuildExternalStairs();
             BuildReception(overview);
+            BuildUtilityRoom(overview);
             BuildRoadsideFeatures();
             BuildDesert();
             BuildPlanting();
+            if (!overview)
+                BuildForecourtDetails();
             BuildParking(overview);
             if (!overview)
             {
@@ -79,7 +86,7 @@ namespace DesertLantern
 
         private void BuildDesert()
         {
-            Material rock = Surface(new Color32(128, 133, 111, 255), .85f, .45f);
+            Material rock = Surface(new Color32(137, 111, 93, 255), .85f, .45f);
             var random = new System.Random(138);
             for (int i = 0; i < 21; i++)
             {
@@ -95,7 +102,7 @@ namespace DesertLantern
 
         private void Ridge(Vector3 position, float radius, float height, Material material, int seed)
         {
-            const int sides = 9;
+            const int sides = 15;
             var random = new System.Random(seed);
             var vertices = new Vector3[sides * 3 + 1];
             for (int layer = 0; layer < 3; layer++)
@@ -123,16 +130,9 @@ namespace DesertLantern
             }
             for (int i = 0; i < sides; i++)
                 indices.AddRange(new[] { 2 * sides + i, 3 * sides, 2 * sides + (i + 1) % sides });
-            // Duplicate triangle vertices for the faceted faces of the desert ridges.
-            var flat = new List<Vector3>(indices.Count);
-            for (int i = 0; i < indices.Count; i++)
-                flat.Add(vertices[indices[i]]);
-            var triangles = new int[flat.Count];
-            for (int i = 0; i < triangles.Length; i++)
-                triangles[i] = i;
             var mesh = new Mesh { name = "Desert ridge" };
-            mesh.SetVertices(flat);
-            mesh.SetTriangles(triangles, 0);
+            mesh.vertices = vertices;
+            mesh.SetTriangles(indices, 0);
             mesh.RecalculateNormals();
             meshes.Add(mesh);
 
@@ -167,6 +167,8 @@ namespace DesertLantern
         }
 
         private Light daylightSun;
+        private Material motelSky;
+        private Light receptionWindowFill;
         private Transform clockHour;
         private Transform clockMinuteHand;
         private int lastShownMinute = -1;
@@ -180,24 +182,42 @@ namespace DesertLantern
             float elevation = Mathf.Sin((hour - 6f) * Mathf.PI / 12f);
             float daylight = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(-.14f, .36f, elevation));
             float warm = Mathf.Clamp01(1f - Mathf.Abs(elevation) * 3f) * daylight;
-            daylightSun.transform.rotation = Quaternion.Euler(Mathf.Max(4f, elevation * 58f), hour * 15f - 210f, 0);
+            daylightSun.transform.rotation = Quaternion.Euler(Mathf.Max(4f, elevation * 45f), hour * 11f - 85f, 0);
             daylightSun.intensity = 1.12f * daylight;
+            if (receptionWindowFill != null)
+                receptionWindowFill.intensity = .64f * daylight;
             daylightSun.color = Color.Lerp(new Color(1f, .95f, .84f), new Color(1f, .63f, .38f), warm);
-            RenderSettings.ambientLight = Color.Lerp(new Color(.20f, .23f, .34f),
-                new Color(.56f, .58f, .57f), daylight);
-            Color sky = Color.Lerp(new Color(.075f, .105f, .19f), new Color(.66f, .71f, .72f), daylight);
+            RenderSettings.ambientSkyColor = Color.Lerp(new Color(.19f, .22f, .34f),
+                new Color(.57f, .63f, .69f), daylight);
+            RenderSettings.ambientEquatorColor = Color.Lerp(new Color(.18f, .20f, .27f),
+                new Color(.47f, .49f, .49f), daylight);
+            RenderSettings.ambientGroundColor = Color.Lerp(new Color(.13f, .12f, .14f),
+                new Color(.42f, .37f, .30f), daylight);
+            Color sky = Color.Lerp(new Color(.075f, .105f, .19f), new Color(.76f, .82f, .87f), daylight);
             camera.backgroundColor = Color.Lerp(sky, new Color(.81f, .49f, .36f), warm * .55f);
             RenderSettings.fogColor = camera.backgroundColor;
+            if (motelSky != null)
+            {
+                if (camera.clearFlags != CameraClearFlags.Skybox)
+                {
+                    camera.gameObject.AddComponent<Skybox>().material = motelSky;
+                    camera.clearFlags = CameraClearFlags.Skybox;
+                }
+                motelSky.SetFloat("_Daylight", daylight);
+                motelSky.SetColor("_Horizon", camera.backgroundColor);
+            }
             foreach (Light light in outdoorLights)
-                light.intensity = (1f - daylight) * 2.9f;
+                light.intensity = Mathf.Lerp(2.6f, light.range < 8f ? .39f : 0f, daylight);
             clockHour.localRotation = Quaternion.Euler(0, 0, -hour * 30f);
             clockMinuteHand.localRotation = Quaternion.Euler(0, 0, -(absoluteMinute % 60) * 6f);
         }
 
         private void Lighting(bool overview)
         {
-            RenderSettings.ambientMode = AmbientMode.Flat;
-            RenderSettings.ambientLight = new Color(.56f, .58f, .57f);
+            RenderSettings.ambientMode = AmbientMode.Trilight;
+            RenderSettings.ambientSkyColor = new Color(.57f, .63f, .69f);
+            RenderSettings.ambientEquatorColor = new Color(.47f, .49f, .49f);
+            RenderSettings.ambientGroundColor = new Color(.42f, .37f, .30f);
             RenderSettings.fog = !overview;
             RenderSettings.fogMode = FogMode.Linear;
             RenderSettings.fogColor = new Color(.63f, .70f, .71f);
@@ -212,6 +232,11 @@ namespace DesertLantern
             sun.shadows = LightShadows.Soft;
             sun.shadowStrength = .72f;
             RenderSettings.sun = daylightSun = sun;
+            if (!overview && Resources.Load<Shader>("MotelSky") is Shader skyShader && skyShader.isSupported)
+            {
+                motelSky = new Material(skyShader);
+                materials.Add(motelSky);
+            }
         }
 
         private GameObject Box(string name, Vector3 position, Vector3 scale, Material material, int layer = 0)
@@ -227,13 +252,27 @@ namespace DesertLantern
             return piece;
         }
 
-        private Material Surface(Color color, float wear, float grain)
+        private Material Surface(Color color, float wear, float grain, float smoothness = .18f,
+            float metallic = 0f, float grainStretch = 1f)
         {
             var material = new Material(shader) { color = color };
             material.SetFloat("_Wear", wear);
             material.SetFloat("_Grain", grain);
+            material.SetFloat("_Smoothness", smoothness);
+            material.SetFloat("_Metallic", metallic);
+            material.SetFloat("_GrainStretch", grainStretch);
             materials.Add(material);
             return material;
+        }
+
+        private static void ApplySurfaceDetail(Material material, string name, float repeatsPerMetre, float strength)
+        {
+            Texture2D detail = Resources.Load<Texture2D>("SurfaceDetail/" + name);
+            if (detail == null)
+                return;
+            material.SetTexture("_DetailMap", detail);
+            material.SetFloat("_DetailScale", repeatsPerMetre);
+            material.SetFloat("_DetailStrength", strength);
         }
 
         public void Dispose()

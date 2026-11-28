@@ -16,6 +16,7 @@ public static partial class CoreGameplayChecks
         object service = NewMotel();
         Set(service, "Cash", 1000);
         Set(service, "CleaningKits", 1);
+        Set(service, "Towels", 2);
         Set(service, "TrashBags", 2);
         Set(service, "LinenSets", 4);
         Set(service, "Vacuums", 1);

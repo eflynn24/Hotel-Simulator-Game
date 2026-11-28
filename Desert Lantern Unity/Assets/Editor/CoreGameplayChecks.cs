@@ -56,6 +56,8 @@ public static partial class CoreGameplayChecks
         DeskCheckout();
         Phone();
         Requests();
+        GuestTaskWorkflow();
+        SharedOperations();
         Supplies();
         Housekeeping();
         StaffingAndFinances();
@@ -241,6 +243,67 @@ public static partial class CoreGameplayChecks
         Check(!Yes(service, "RequestOpen", 0), "checkout removes open request");
     }
 
+    private static void GuestTaskWorkflow()
+    {
+        object service = NewMotel();
+        Set(service, "Towels", 3);
+        Check(Yes(service, "Book", 0, 720, 2100, EnumValue("BookingChannel", "Online"),
+            EnumValue("BookingPreference", "ExtraTowels")) && Yes(service, "CheckIn", 0, 720, 720),
+            "checked-in booking carries its extra-towel request");
+        Set(service, "ClockMinute", 730);
+        object request = Call(service, "RequestReference", 0);
+        Check((int)Call(service, "RequiredRequestUnits", 0) == 2 &&
+            Yes(service, "ClaimGuestTask", request, 7ul) && !Yes(service, "ClaimGuestTask", request, 9ul) &&
+            !Yes(service, "DeliverGuestTask", request, 7ul), "request requires ownership and stock pickup");
+        Check(!Yes(service, "CollectGuestTask", request, 9ul) && Yes(service, "CollectGuestTask", request, 7ul) &&
+            !Yes(service, "CollectGuestTask", request, 7ul) && Number(service, "Towels") == 1,
+            "two towels come off the shelf exactly once");
+        service = RoundTrip(service, "SavedState", true);
+        Check(Yes(service, "RequestItemCollected", 0) && Yes(service, "OwnsGuestTask", 0, 7ul) &&
+            !Yes(service, "DeliverGuestTask", request, 9ul), "task and pickup survive saving without changing ownership");
+        Call(service, "ReleaseGuestTasks", 7ul);
+        Check(Number(service, "Towels") == 3 && !Yes(service, "RequestClaimed", 0) &&
+            Yes(service, "ClaimGuestTask", request, 9ul), "disconnect restores collected inventory and reopens task");
+        Check(Yes(service, "CollectGuestTask", request, 9ul) && Yes(service, "DeliverGuestTask", request, 9ul) &&
+            !Yes(service, "DeliverGuestTask", request, 9ul) && Number(service, "Towels") == 1 &&
+            Yes(service, "RequestSatisfied", 0), "handoff completes the request once");
+    }
+
+    private static void SharedOperations()
+    {
+        object service = NewMotel();
+        Check(CheckInReserved(service, 0, 720, 720), "shared queue fixture check-in");
+        Call(service, "CompleteCheckout", 0, true);
+        int guest = (int)Call(service, "GuestId", 0);
+        IList tasks = (IList)Activator.CreateInstance(typeof(System.Collections.Generic.List<>).MakeGenericType(Type("OperationTask")));
+        Call(service, "ReadOperations", tasks, true);
+        string[] statuses = tasks.Cast<object>().Select(task => Field(task, "Status").GetValue(task).ToString()).ToArray();
+        Check(statuses.Contains("Completed") && tasks.Cast<object>().Any(task => Field(task, "Kind").GetValue(task).ToString() == "Cleaning"),
+            "checkout completes reception work and creates turnover work in the same queue");
+        object cleaning = tasks.Cast<object>().First(task => Field(task, "Kind").GetValue(task).ToString() == "Cleaning");
+        int code = (int)Property(cleaning, "Code");
+        Check(Yes(service, "ChangeOperationOwner", code, guest, 7ul, true) &&
+            !Yes(service, "ChangeOperationOwner", code, guest, 8ul, true) &&
+            !Yes(service, "ChangeOperationOwner", code, guest, 8ul, false),
+            "cleanup assignment is exclusive and cannot be removed by another worker");
+        service = RoundTrip(service, "SavedState", true);
+        Call(service, "ReadOperations", tasks, true);
+        cleaning = tasks.Cast<object>().First(task => Field(task, "Kind").GetValue(task).ToString() == "Cleaning");
+        Check(Convert.ToUInt64(Field(cleaning, "Worker").GetValue(cleaning)) == 7ul &&
+            Yes(service, "ChangeOperationOwner", code, guest, 7ul, false), "saved assignment can be released to the employee queue");
+        Set(service, "RepairParts", 0);
+        Set(service, "Cash", 0);
+        Call(service, "Wear", 1, EnumValue("Fixture", "Toilet"), 100);
+        Call(service, "ReadOperations", tasks, false);
+        object maintenance = tasks.Cast<object>().First(task => Field(task, "Kind").GetValue(task).ToString() == "Maintenance");
+        Check(Field(maintenance, "Status").GetValue(maintenance).ToString() == "Blocked" &&
+            Field(maintenance, "Next").GetValue(maintenance).ToString().Contains("repair parts") &&
+            !Yes(service, "RoomReadyForGuest", 1), "maintenance names the shortage and blocks room readiness");
+        Set(service, "RepairParts", 1);
+        Check(Yes(service, "Repair", 1, EnumValue("Fixture", "Toilet"), false) && Yes(service, "RoomReadyForGuest", 1),
+            "repair releases a clean room for the next arrival");
+    }
+
     private static void Supplies()
     {
         object service = NewMotel();
@@ -251,20 +314,28 @@ public static partial class CoreGameplayChecks
         Check((int)Property(saved, "PendingOrderCount") == 2, "pending supply orders survive binary save");
         service = saved;
         int due = Number(service, "DeliveryDue");
+        Check(due == 750 && (int)Call(service, "IncomingStock", 2) == 2, "standard delivery takes 30 minutes and counts queued stock");
         Set(service, "ClockMinute", due - 1);
         Call(service, "AdvanceDelivery");
         Check(Field(service, "Delivery").GetValue(service).ToString() == "InTransit", "no early supplies");
         Set(service, "ClockMinute", due);
         Call(service, "AdvanceDelivery");
         Check(Field(service, "Delivery").GetValue(service).ToString() == "AtBay", "delivery due at scheduled minute");
-        Call(service, "CollectSupply", 5ul);
-        Call(service, "CollectSupply", 6ul);
-        Call(service, "StoreSupply", 6ul);
-        Check(Number(service, "Towels") == 0, "another worker cannot take or store the held crate");
-        Call(service, "StoreSupply", 5ul);
-        Call(service, "StoreSupply", 5ul);
-        Check(Number(service, "CleaningKits") == 2 && Number(service, "Towels") == 12 && (int)Property(service, "PendingOrderCount") == 1,
-            "correct pack quantities, no duplicate collection");
+        Check(Yes(service, "CollectSupplyOrder", 1, 5ul) && !Yes(service, "CollectSupplyOrder", 1, 6ul) &&
+            Yes(service, "CollectSupplyOrder", 2, 6ul) && !Yes(service, "CollectSupplyOrder", 2, 5ul),
+            "two workers may carry different orders and may not claim the same crate");
+        service = RoundTrip(service, null, false);
+        Call(service, "RecoverSupply", 6ul);
+        Check((int)Call(service, "CarriedSupplyOrder", 5ul) == 1 &&
+            (int)Call(service, "NextSupplyPickup", 9ul) == 2 && Yes(service, "CollectSupplyOrder", 2, 6ul),
+            "disconnect releases only that worker’s crate and preserves other deliveries");
+        Check(!Yes(service, "StoreSupplyOrder", 1, 6ul) && Yes(service, "StoreSupplyOrder", 2, 6ul) &&
+            !Yes(service, "StoreSupplyOrder", 2, 6ul) && Number(service, "LinenSets") == 2 && Number(service, "Towels") == 0,
+            "a second order can be stocked first after network replication");
+        Check(Yes(service, "StoreSupplyOrder", 1, 5ul) && !Yes(service, "StoreSupplyOrder", 1, 5ul) &&
+            Number(service, "CleaningKits") == 2 && Number(service, "Towels") == 12 &&
+            (int)Property(service, "PendingOrderCount") == 0 && (int)Property(service, "CompletedOrderCount") == 2,
+            "each crate stocks its own inventory once");
         Set(service, "Cash", 0);
         Check(!Yes(service, "Order", 0) && Number(service, "Cash") == 0, "insufficient cash cannot purchase");
         Check(Report(service, "Supplies") == -104, "supplies reconcile with expenses");
@@ -300,6 +371,7 @@ public static partial class CoreGameplayChecks
         Set(service, "Vacuums", 1);
         Set(service, "LinenSets", 4);
         Set(service, "CleaningKits", 1);
+        Set(service, "Towels", 2);
         Check(CheckInReserved(service, 0, 720, 720), "housekeeping example guest");
         Call(service, "AdvanceClock", 900);
         Check((int)Call(service, "Cleanliness", 0) < 100, "room dirt during stay");
@@ -309,12 +381,14 @@ public static partial class CoreGameplayChecks
         Check(!Yes(service, "CanClean", 0, trash), "do not disturb prevents cleaning");
         Call(service, "CompleteCheckout", 0, true);
         Check((int)Call(service, "Cleanliness", 0) == 0, "checkout puts every cleaning task on the list");
-        for (int index = 0; index < 8; index++)
+        for (int index = 0; index < 9; index++)
             Call(service, "Clean", 0, Enum.ToObject(Type("CleaningTask"), index));
         Check(Number(service, "TrashBags") == 1 && Number(service, "LinenSets") == 2 &&
             Number(service, "DirtyLinens") == 2, "housekeeping uses bags and clean linen correctly");
         Check((int)Call(service, "Cleanliness", 0) == 100 && Yes(service, "RoomReadyForGuest", 0),
             "ready only after completing the turnover list");
+        Check(Number(service, "Towels") == 1 && Yes(service, "CleaningCompleted", 0, EnumValue("CleaningTask", "Restock")),
+            "turnover physically restocks a towel and toiletries");
     }
 
     private static void StaffingAndFinances()
@@ -480,6 +554,22 @@ public static partial class CoreGameplayChecks
                 drive.Invoke(null, new object[] { walker, route, Vector3.zero, false, 1f / 60f });
             position = (Vector3)Property(walker, "Position");
             Check(Vector3.Distance(position, rack) < .35f, $"key rack can be reached from behind the desk, reached {position}");
+            var bay = (Vector3)world.GetField("DeliveryBay").GetValue(null);
+            var storage = (Vector3)world.GetField("SupplyStorage").GetValue(null);
+            var utility = (Vector3)world.GetField("UtilityThreshold").GetValue(null);
+            Call(walker, "Warp", bay);
+            Physics.SyncTransforms();
+            routeMethod.Invoke(null, new object[] { route, bay, storage });
+            Check(route.Contains(utility), "delivery route enters housekeeping through its own door");
+            for (int step = 0; step < 540 && route.Count > 0; step++)
+                drive.Invoke(null, new object[] { walker, route, Vector3.zero, false, 1f / 60f });
+            position = (Vector3)Property(walker, "Position");
+            Check(Vector3.Distance(position, storage) < .35f, $"delivery bay can reach the utility shelves, reached {position}");
+            routeMethod.Invoke(null, new object[] { route, position, computer });
+            for (int step = 0; step < 720 && route.Count > 0; step++)
+                drive.Invoke(null, new object[] { walker, route, Vector3.zero, false, 1f / 60f });
+            position = (Vector3)Property(walker, "Position");
+            Check(Vector3.Distance(position, computer) < .35f, $"utility shelves can reach reception, reached {position}");
         }
         finally
         {

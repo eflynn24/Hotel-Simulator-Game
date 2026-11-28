@@ -72,7 +72,10 @@ namespace DesertLantern
                 return;
             int room = SuggestRoom(PhoneArrival, DepartureForNights(PhoneArrival, PhoneNights));
             if (!AcceptPhoneReservation(room, NextPhoneCall, ReceptionPhoneWorker))
+            {
+                FinishOperation(OperationKind.Phone, 0, NextPhoneCall, true);
                 FinishPhoneBooking();
+            }
         }
 
         private void MoveRemoteLuggage()
@@ -92,8 +95,8 @@ namespace DesertLantern
             int target = -1;
             for (int room = 0; room < RoomCapacity; room++)
             {
-                if (!RequestDue(room) || !RequestSuppliesAvailable(room) ||
-                    (StaffUrgentOnly((int)StaffRole.GuestServices) && !RequestUrgent(room)))
+                if (!RequestDue(room) || RequestClaimed(room) || !RequestSuppliesAvailable(room) ||
+                    !EmployeeEligible(StaffRole.GuestServices, RequestUrgent(room)))
                     continue;
                 bool urgent = RequestUrgent(room);
                 if (target < 0 || urgent && !RequestUrgent(target) ||
@@ -108,31 +111,49 @@ namespace DesertLantern
 
         private void WorkHousekeeping(int remaining)
         {
-            for (int room = 0; room < RoomCapacity && remaining > 0; room++)
-                for (int task = 0; task < CleaningTaskCount && remaining > 0; task++)
-                    if ((!StaffUrgentOnly((int)StaffRole.Housekeeper) || BookingDue(room) || HousekeepingRequested(room)) &&
-                        CanClean(room, (CleaningTask)task))
+            while (remaining > 0)
+            {
+                int room = -1;
+                int earliest = int.MaxValue;
+                CleaningTask next = default;
+                for (int candidate = 0; candidate < RoomCapacity; candidate++)
+                {
+                    if (!RoomDirty(candidate) || !EmployeeEligible(StaffRole.Housekeeper, PriorityCleaning(candidate)) ||
+                        !CanWorkOperation(OperationKind.Cleaning, candidate, GuestId(candidate)))
+                        continue;
+                    int due = CleaningDeadline(candidate);
+                    int score = due < 0 ? int.MaxValue - 1 : due;
+                    if (score >= earliest)
+                        continue;
+                    for (int step = 0; step < CleaningTaskCount; step++)
                     {
-                        Clean(room, (CleaningTask)task);
-                        remaining--;
+                        if (!CanClean(candidate, (CleaningTask)step))
+                            continue;
+                        room = candidate;
+                        next = (CleaningTask)step;
+                        earliest = score;
+                        break;
                     }
-            StartLaundry();
+                }
+                if (room < 0)
+                    break;
+                Clean(room, next);
+                remaining--;
+            }
+            if (EmployeeEligible(StaffRole.Housekeeper, false) && CanWorkOperation(OperationKind.Laundry, 0, 0))
+                StartLaundry();
         }
 
         private void ReorderPropertySupplies()
         {
-            if (PendingOrderCount > 0 || Cash < 18)
+            if (Cash < 18)
                 return;
             int cart = 0;
             int budget = Cash - StaffWage;
             for (int item = 0; item < Catalog.Length; item++)
             {
-                int wanted = item == 4 ? 1 : item == 2 || item == 3 ? 8 : 3;
-                int shortage = wanted - Stock(item);
                 SupplyOffer offer = Catalog[item];
-                if (shortage <= 0 || budget < offer.Price)
-                    continue;
-                int packs = Math.Min((shortage + offer.Quantity - 1) / offer.Quantity, budget / offer.Price);
+                int packs = Math.Min(RecommendedRestockPacks(item), budget / offer.Price);
                 cart |= packs << (4 * item);
                 budget -= packs * offer.Price;
             }

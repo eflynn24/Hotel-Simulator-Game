@@ -59,15 +59,10 @@ namespace DesertLantern
             }
         }
 
-        private enum ReceptionPanel { None, Phone, Notebook, Guest, Keys, Maintenance, Portfolio }
+        private enum ReceptionPanel { None, Phone, Notebook, Guest, Keys, Maintenance, Portfolio, Restock }
         private ReceptionPanel receptionPanel;
         private int inspectedGuest;
-        private int pinnedRoom = NoRoom;
-        private int pinnedGuestId;
-        private int notebookTab;
-        private Vector2 notebookScroll;
         private const byte StaffAction = 20;
-        private const byte GuestMenuAction = 21;
 
         private void SetReceptionPanel(ReceptionPanel panel)
         {
@@ -113,15 +108,6 @@ namespace DesertLantern
                     Campaign.RecordMotelStaffChange(role, !hired);
                 }
             }
-            else if (action == GuestMenuAction && (data.y == 0 || data.y == 1))
-            {
-                if (data.x < 0 || data.x >= Guests.Length || data.x != Mathf.Floor(data.x))
-                    return;
-                int room = (int)data.x;
-                if (GuestToServe(position) != room && !NearActiveGuest(room, position))
-                    return;
-                service.ApplyGuestRequest(service.RequestReference(room), data.y == 1);
-            }
             Service = service;
         }
 
@@ -148,7 +134,7 @@ namespace DesertLantern
         {
             int count = 0;
             for (int room = 0; room < Guests.Length; room++)
-                if (service.RequestOpen(room))
+                if (service.RequestDue(room))
                     count++;
             return count;
         }
@@ -187,6 +173,7 @@ namespace DesertLantern
                 : receptionPanel == ReceptionPanel.Phone ? "Reception telephone"
                 : receptionPanel == ReceptionPanel.Keys ? "Room keys"
                 : receptionPanel == ReceptionPanel.Maintenance ? "Maintenance"
+                : receptionPanel == ReceptionPanel.Restock ? "Order supplies"
                 : receptionPanel == ReceptionPanel.Portfolio ? "Management phone" : Service.StayGuest(inspectedGuest);
             DrawFittedText(new Rect(left, panel.y + 12 * scale, width, 49 * scale), heading, title);
             var area = new Rect(left, panel.y + 68 * scale, width, 292 * scale);
@@ -200,6 +187,8 @@ namespace DesertLantern
                 DrawMaintenance(area, scale);
             else if (receptionPanel == ReceptionPanel.Keys)
                 DrawKeyRack(area, scale);
+            else if (receptionPanel == ReceptionPanel.Restock)
+                DrawQuickRestock(area, scale);
             else
                 DrawGuestMenu(area, scale);
             if (DrawButton(new Rect(left, panel.y + 370 * scale, width, 34 * scale), "Close"))
@@ -269,8 +258,7 @@ namespace DesertLantern
             if (DrawButton(new Rect(area.x, area.y + 128 * scale, half, 32 * scale), "Call supplier"))
             {
                 SetReceptionPanel(ReceptionPanel.None);
-                computerTab = 0;
-                SetComputerVisible(true);
+                OpenComputer(SuppliesTab);
             }
             DrawFittedText(new Rect(area.x, area.y + 165 * scale, area.width, 26 * scale), $"Missed calls · {service.MissedCalls}", detail);
             for (int row = 0; row < Mathf.Min(4, service.MissedHistoryCount); row++)
@@ -278,119 +266,6 @@ namespace DesertLantern
                     MotelService.DisplayTime(service.MissedCallTime(service.MissedHistoryCount - 1 - row)), label);
         }
 
-        private void DrawGuestMenu(Rect area, float scale)
-        {
-            MotelService service = Service;
-            DrawFittedText(new Rect(area.x, area.y, area.width, 30 * scale), $"Room {inspectedGuest + 1}", detail);
-            DrawFittedText(new Rect(area.x, area.y + 152 * scale, area.width, 28 * scale),
-                $"{service.Personality(inspectedGuest)} · {service.GuestSatisfaction(inspectedGuest)}", label);
-            DrawFittedText(new Rect(area.x, area.y + 250 * scale, area.width, 26 * scale),
-                $"Expected quality {service.Expectations(inspectedGuest)}% · Room quality {service.RoomQuality(inspectedGuest)}%", label);
-            if (service.ReturningGuest(inspectedGuest))
-                DrawFittedText(new Rect(area.x, area.y + 274 * scale, area.width, 25 * scale), service.GuestMemory(inspectedGuest), label);
-            bool open = service.RequestOpen(inspectedGuest);
-            string status = open ? $"{service.RequestLabel(inspectedGuest)} · Waiting {service.RequestWait(inspectedGuest)} min"
-                : service.RequestSatisfied(inspectedGuest) ? "Request completed" : "No outstanding request";
-            DrawFittedText(new Rect(area.x, area.y + 35 * scale, area.width, 32 * scale), status, label);
-            GuestIssue issue = service.OutstandingIssue(inspectedGuest);
-            if (issue != GuestIssue.None)
-            {
-                DrawFittedText(new Rect(area.x, area.y + 184 * scale, area.width, 26 * scale), IssueLabel(issue), label);
-                if (DrawButton(new Rect(area.x, area.y + 215 * scale, area.width, 32 * scale), IssueActionLabel(issue)))
-                    RequestPropertyCare(8, inspectedGuest, (Fixture)issue);
-            }
-            if (open)
-            {
-                if (DrawButton(new Rect(area.x, area.y + 76 * scale, area.width, 32 * scale), service.RequestSuppliesAvailable(inspectedGuest)
-                    ? service.RequestLabel(inspectedGuest) : "Waiting for supplies") && service.RequestSuppliesAvailable(inspectedGuest))
-                    RequestOperations(GuestMenuAction, new Vector3(inspectedGuest, 0, 0));
-                if (DrawButton(new Rect(area.x, area.y + 116 * scale, area.width, 32 * scale), "Cancel request"))
-                    RequestOperations(GuestMenuAction, new Vector3(inspectedGuest, 1, 0));
-
-            }
-        }
-
-        private void DrawNotebook(Rect area, float scale)
-        {
-            string[] tabs = { "Guests", "Requests", "Schedule", "Deliveries" };
-            float tabWidth = area.width / tabs.Length;
-            for (int tab = 0; tab < tabs.Length; tab++)
-                if (DrawButton(new Rect(area.x + tabWidth * tab, area.y, tabWidth - 3 * scale, 30 * scale), tabs[tab]))
-                {
-                    notebookTab = tab;
-                    notebookScroll = Vector2.zero;
-                }
-
-            MotelService service = Service;
-            if (pinnedRoom != NoRoom && (!service.RequestDue(pinnedRoom) || service.GuestId(pinnedRoom) != pinnedGuestId))
-                pinnedRoom = NoRoom;
-            var rows = new List<(string Caption, int Room)>();
-            if (notebookTab == 0 || notebookTab == 1)
-            {
-                for (int room = 0; room < Guests.Length; room++)
-                {
-                    string request = service.NotebookRequest(room);
-                    if (notebookTab == 0 && (service.ActiveRooms & (1 << room)) != 0)
-                        rows.Add(($"{service.StayGuest(room)} · Room {room + 1} · {ActivityLabel(service.Activity(room))}", NoRoom));
-                    else if (notebookTab == 1 && service.HousekeepingRequested(room))
-                        rows.Add(($"Room {room + 1} · Housekeeping requested", NoRoom));
-                    if (notebookTab == 1 && request != null)
-                    {
-                        var entry = (request, room);
-                        if (room == pinnedRoom)
-                            rows.Insert(0, entry);
-                        else
-                            rows.Add(entry);
-                    }
-                }
-            }
-            else if (notebookTab == 2)
-            {
-                for (int i = 0; i < service.ReservationCount; i++)
-                    rows.Add(($"Arrive · Room {service.ReservationRoom(i) + 1} · {MotelService.DisplayTime(service.ReservationStart(i))}", NoRoom));
-                for (int room = 0; room < Guests.Length; room++)
-                    if ((service.ActiveRooms & (1 << room)) != 0)
-                        rows.Add(($"Depart · Room {room + 1} · {MotelService.DisplayTime(service.DepartureMinute(room))}", NoRoom));
-            }
-            else if (service.PendingOrderCount > 0)
-            {
-                string state = service.Delivery == SupplyDelivery.InTransit ? MotelService.DisplayTime(service.DeliveryDue)
-                    : service.Delivery == SupplyDelivery.AtBay ? "At the delivery bay" : "Carried to storage";
-                rows.Add(($"Order #{service.ActiveOrderNumber} · {state}", NoRoom));
-                for (int i = 0; i < service.PendingOrderCount - 1; i++)
-                    rows.Add(($"Order #{service.QueuedOrderNumber(i)} · {MotelService.DisplayTime(service.QueuedOrderDue(i))}", NoRoom));
-            }
-
-            if (notebookTab == 1)
-                for (int room = 0; room < Guests.Length; room++)
-                {
-                    GuestIssue issue = service.OutstandingIssue(room);
-                    if (issue != GuestIssue.None)
-                        rows.Add(($"Room {room + 1} · {IssueLabel(issue)}", NoRoom));
-                }
-            if (notebookTab == 3)
-                for (int item = 0; item < MotelService.Catalog.Length; item++)
-                    if (item != 4 && service.Stock(item) <= 1)
-                        rows.Add(($"Low stock · {MotelService.Catalog[item].Name} · {service.Stock(item)} left", NoRoom));
-            if (rows.Count == 0)
-                rows.Add(("Nothing scheduled here", NoRoom));
-            var viewport = new Rect(area.x, area.y + 40 * scale, area.width, area.height - 40 * scale);
-            float width = area.width - 20 * scale;
-            notebookScroll = GUI.BeginScrollView(viewport, notebookScroll, new Rect(0, 0, width, rows.Count * 31 * scale));
-            for (int row = 0; row < rows.Count; row++)
-            {
-                var entry = rows[row];
-                float y = row * 31 * scale;
-                DrawFittedText(new Rect(0, y, width - (entry.Room == NoRoom ? 0 : 62 * scale), 30 * scale), entry.Caption, label);
-                if (entry.Room != NoRoom && DrawButton(new Rect(width - 60 * scale, y, 60 * scale, 28 * scale),
-                    pinnedRoom == entry.Room ? "Unpin" : "Pin"))
-                {
-                    pinnedRoom = pinnedRoom == entry.Room ? NoRoom : entry.Room;
-                    if (pinnedRoom != NoRoom)
-                        pinnedGuestId = service.GuestId(pinnedRoom);
-                }
-            }
-            GUI.EndScrollView();
-        }
+        private void DrawGuestMenu(Rect area, float scale) => DrawGuestTask(area, scale, Service, inspectedGuest);
     }
 }

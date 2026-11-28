@@ -1,0 +1,11 @@
+Photographic surfaces adapted from Poly Haven's CC0 texture library. The
+included maps pack a reduced-size diffuse detail in RGB and roughness in alpha.
+
+Worn Asphalt by Amal Kumar
+https://polyhaven.com/a/worn_asphalt
+
+Preconcrete Wall 001
+https://polyhaven.com/a/preconcrete_wall_001
+
+Fine Grained Wood by Rob Tuytel
+https://polyhaven.com/a/fine_grained_wood
