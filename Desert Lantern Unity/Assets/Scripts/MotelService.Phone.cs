@@ -11,6 +11,19 @@ namespace DesertLantern
         public bool CanBookPhoneFor(ulong worker) => CanBookPhone && bookingPhoneOwner == worker;
         public bool CanReturnBookingCall => missedBookingMinute > 0 && !CanBookPhone && !BookingCallRinging;
 
+        public int PhoneArrival => (NextPhoneCall / MinutesPerDay + 1 + NextPhoneCall / 15 % 3) * MinutesPerDay + 15 * 60;
+        public int PhoneNights => 1 + NextPhoneCall / 30 % 3;
+        public BookingPreference PhonePreference => (BookingPreference)(NextPhoneCall / 15 % 4);
+
+        public bool AcceptPhoneReservation(int room, int callMinute, ulong worker)
+        {
+            if (!CanBookPhoneFor(worker) || callMinute != NextPhoneCall ||
+                !Book(room, PhoneArrival, DepartureForNights(PhoneArrival, PhoneNights), BookingChannel.Telephone, PhonePreference))
+                return false;
+            FinishPhoneBooking();
+            return true;
+        }
+
         public bool TryAnswerPhone(ulong worker)
         {
             if (CanBookPhone)
@@ -59,6 +72,12 @@ namespace DesertLantern
         public void ReleasePhone(ulong worker)
         {
             if (CanBookPhoneFor(worker))
+                MissBookingCall();
+        }
+
+        public void RecoverReceptionSession()
+        {
+            if (CanBookPhone)
                 MissBookingCall();
         }
 

@@ -117,13 +117,15 @@ namespace DesertLantern
         private const byte DeskCheckInAction = 28;
         private const byte DeskCheckOutAction = 29;
         private const byte ConfirmReservationAction = 30;
+        private const byte OnlineApprovalAction = 31;
+        private const byte AcceptPhoneAction = 32;
         private bool deskCheckInApproved;
 
         private void OpenDeskReservations()
         {
             computerTab = ReservationsTab;
             MotelService service = Service;
-            if (GuestWaiting && service.ArrivalReady(Occupied))
+            if (GuestWaiting && service.DeskArrivalReady(Occupied))
             {
                 reservationView = ReservationView.Arrivals;
                 SelectBooking(service, FindArrivalBooking(service));
@@ -133,16 +135,24 @@ namespace DesertLantern
                 reservationView = ReservationView.Departures;
                 SelectStay(departing);
             }
-            else if (service.FirstPendingReservation is int pending && pending >= 0)
-            {
-                reservationView = ReservationView.Requests;
-                SelectBooking(service, pending);
-            }
+            else
+                reservationView = ReservationView.Calendar;
             SetComputerVisible(true);
         }
 
         private void HandleDeskAction(byte action, Vector3 data, Vector3 point)
         {
+            if (action == OnlineApprovalAction)
+            {
+                if (AtComputer(point) && (data.x == 0 || data.x == 1))
+                {
+                    MotelService settings = Service;
+                    settings.SetOnlineApproval(data.x == 1);
+                    Service = settings;
+                }
+                return;
+            }
+
             if (!AtComputer(point) || data.x < 0 || data.x >= Service.RoomCapacity ||
                 data.x != Mathf.Floor(data.x))
                 return;
@@ -151,9 +161,11 @@ namespace DesertLantern
             MotelService service = Service;
             if (action == DeskCheckInAction)
             {
-                if (GuestWaiting && room == Occupied && service.ArrivalReady(room) &&
-                    service.BookingStart(room) == data.y && service.BookingEnd(room) == data.z)
+                if (GuestWaiting && room == Occupied && service.DeskArrivalReady(room) &&
+                    service.BookingStart(room) == data.y && service.BookingEnd(room) == data.z &&
+                    (service.BookingDue(room) || service.AcceptReservation(FindArrivalBooking(service), (int)data.y)))
                 {
+                    Service = service;
                     deskCheckInApproved = true;
                     guestDeskMinute = service.ClockMinute;
                 }
@@ -163,7 +175,7 @@ namespace DesertLantern
                 Service = service;
             else if (action == ConfirmReservationAction)
                 for (int index = 0; index < service.ReservationCount; index++)
-                    if (service.ReservationRoom(index) == room && service.ReservationStart(index) == data.y &&
+                    if (service.ReservationChannel(index) != BookingChannel.WalkIn && service.ReservationRoom(index) == room && service.ReservationStart(index) == data.y &&
                         service.ReservationEnd(index) == data.z && service.AcceptReservation(index, (int)data.y))
                     {
                         Service = service;
@@ -172,86 +184,174 @@ namespace DesertLantern
                     }
         }
 
-        private const int PhoneArrivalLead = 120;
-        private int bookingRoom;
-        private int bookingLead;
+        private int bookingRoom = NoRoom;
+        private int bookingStart = -1;
         private int bookingNights = 1;
         private BookingPreference bookingPreference;
         private int calendarOffset;
         private string bookingFeedback;
+        private string reservationEditFeedback;
+
+        private void ReceiveBookingResult(byte action, bool success, Vector3 selection)
+        {
+            if (action == BookRoomAction)
+            {
+                bookingFeedback = success ? "Reservation confirmed" : "Room unavailable for those dates";
+                if (success && reservationView == ReservationView.New)
+                {
+                    reservationView = ReservationView.Calendar;
+                    selectedRoom = (int)selection.x;
+                    selectedArrival = (int)selection.y;
+                    editingReservation = confirmingCancellation = false;
+                }
+            }
+            else if (action == AcceptPhoneAction)
+                bookingFeedback = success ? "Telephone reservation confirmed" : "Room unavailable for those dates";
+            else if (action == EditBookingAction)
+            {
+                if (success && selection.x >= 0 && selection.y >= 0)
+                {
+                    selectedRoom = (int)selection.x;
+                    selectedArrival = (int)selection.y;
+                }
+                else if (success && selection.x < 0)
+                    SelectStay(NoRoom);
+                reservationEditFeedback = success ? "Reservation updated" : "Change could not be made. Check dates and availability.";
+            }
+        }
+
+        private void SendBookingResult(ulong worker, byte action, bool success, Vector3 selection)
+        {
+            if (worker == LocalWorker)
+                ReceiveBookingResult(action, success, selection);
+            else
+                lan?.State?.SendBookingResult(worker, action, success, selection);
+        }
 
         private void ChangeBooking(byte action, Vector3 data, Vector3 point, ulong worker)
         {
+            if (!Finite(data.x) || !Finite(data.y) || !Finite(data.z) ||
+                data.x != Mathf.Floor(data.x) || data.y != Mathf.Floor(data.y) || data.z != Mathf.Floor(data.z) ||
+                data.x < 0 || data.x >= 8 * MotelService.RoomCount || data.y < 0 || data.y > int.MaxValue / 2 ||
+                data.z < 0 || data.z > int.MaxValue / 2)
+                return;
+
             MotelService service = Service;
-            if (action == BookRoomAction)
+            int room = (int)data.x % MotelService.RoomCount;
+            int option = (int)data.x / MotelService.RoomCount;
+            bool success = false;
+            Vector3 selection = new Vector3(room, data.y, data.z);
+            if (action == AcceptPhoneAction)
             {
-                bool phone = data.z < 0;
-                if (phone ? !AtPhone(point) : !AtComputer(point))
-                    return;
-                int room = (int)data.x;
-                int lead = (int)data.y % 8;
-                var preference = (BookingPreference)((int)data.y / 8);
-                int nights = Mathf.Abs((int)data.z);
-                if (room < 0 || room >= Guests.Length || lead < 0 || (int)preference < 0 || (int)preference > 3 || nights < 1 || nights > 7)
-                    return;
-                int start = service.ClockMinute + lead * MotelService.MinutesPerDay +
-                    (phone ? PhoneArrivalLead : MotelService.ScheduleStep);
-                int end = start + nights * MotelService.MinutesPerDay;
-                bool booked = !((guest != null || vehicleArriving) && room == Occupied) && (phone
-                    ? service.QueuePhoneReservation(room, start, end, preference, worker)
-                    : !service.IsBroken(0, Fixture.Router) &&
-                        service.BookRoom(service.RoomReference(room), start, end, BookingChannel.Online, preference));
-                bookingFeedback = booked ? phone ? "Phone request sent to Reservations" : "Reservation confirmed"
-                    : "Room unavailable for those dates";
+                if (AtPhone(point) && option == 0)
+                    success = service.AcceptPhoneReservation(room, (int)data.y, worker);
             }
-            else
+            else if (AtComputer(point))
             {
-                if (!AtComputer(point))
-                    return;
-                int index = (int)data.x;
-                int operation = (int)data.y;
-                if (operation == 6 && index >= 0 && index < Guests.Length)
-                    service.ExtendStay(index);
-                else if (index >= 0 && index < service.ReservationCount &&
-                    operation >= 0 && operation <= 5 && service.ReservationStart(index) == (int)data.z &&
-                    ((guest == null && !vehicleArriving) || (service.ReservationRoom(index) != Occupied &&
-                        (operation != 5 || (service.ReservationRoom(index) + 1) % service.RoomCapacity != Occupied))))
-                    service.ChangeReservation(service.ReservationReference(index), operation);
+                if (action == BookRoomAction && option <= (int)BookingPreference.Toiletries)
+                    success = service.BookRoom(service.RoomReference(room), (int)data.y, (int)data.z,
+                        BookingChannel.Online, (BookingPreference)option);
+                else if (action == EditBookingAction && option == 6 && service.RoomBuilt(room) &&
+                    service.DepartureMinute(room) == data.y && service.GuestId(room) == data.z)
+                {
+                    selection.y = -1;
+                    success = service.ExtendStay(room);
+                }
+                else if (action == EditBookingAction && option <= 5)
+                {
+                    for (int index = 0; index < service.ReservationCount; index++)
+                    {
+                        if (service.ReservationRoom(index) != room || service.ReservationStart(index) != data.y ||
+                            service.ReservationEnd(index) != data.z || ((guest != null || vehicleArriving) && room == Occupied))
+                            continue;
+
+                        success = service.ChangeReservation(service.ReservationReference(index), option);
+                        if (success)
+                            selection = option == 0 ? new Vector3(NoRoom, -1, 0) :
+                                new Vector3(service.ReservationRoom(index), service.ReservationStart(index), service.ReservationEnd(index));
+                        break;
+                    }
+                }
             }
-            Service = service;
+            if (success)
+                Service = service;
+            SendBookingResult(worker, action, success, selection);
         }
 
         private void RequestBookingAction(byte action, Vector3 data)
         {
             if (lan != null && !lan.IsHost)
                 lan.State?.ActionRpc(action, data);
+            else if (action == DeskCheckInAction || action == DeskCheckOutAction || action == ConfirmReservationAction ||
+                action == OnlineApprovalAction)
+                HandleDeskAction(action, data, caretaker.Position);
             else
-            {
-                if (action == DeskCheckInAction || action == DeskCheckOutAction || action == ConfirmReservationAction)
-                    HandleDeskAction(action, data, caretaker.Position);
-                else
-                    ChangeBooking(action, data, caretaker.Position, LocalWorker);
-            }
+                ChangeBooking(action, data, caretaker.Position, LocalWorker);
         }
 
-        private void DrawBookingForm(Rect area, float scale, bool phone)
+        private static int CalendarArrival(int day, int now)
         {
-            float w = area.width / 3;
-            if (DrawButton(new Rect(area.x, area.y, w - 4 * scale, 29 * scale), $"Room {bookingRoom + 1}"))
-                bookingRoom = (bookingRoom + 1) % Service.RoomCapacity;
-            if (DrawButton(new Rect(area.x + w, area.y, w - 4 * scale, 29 * scale), $"In {bookingLead} days"))
-                bookingLead = (bookingLead + 1) % 8;
-            if (DrawButton(new Rect(area.x + 2 * w, area.y, w, 29 * scale), $"{bookingNights} nights"))
+            int afternoon = day * MotelService.MinutesPerDay + 15 * 60;
+            return day == now / MotelService.MinutesPerDay
+                ? Mathf.Max(afternoon, (now / MotelService.ScheduleStep + 2) * MotelService.ScheduleStep)
+                : afternoon;
+        }
+
+        private void BeginBooking(MotelService service, int day, int room = NoRoom)
+        {
+            bookingStart = CalendarArrival(day, service.ClockMinute);
+            bookingNights = 1;
+            bookingPreference = BookingPreference.None;
+            bookingRoom = room;
+            bookingFeedback = null;
+            reservationView = ReservationView.New;
+        }
+
+        private void DrawBookingForm(Rect area, float scale, MotelService service)
+        {
+            int today = service.ClockMinute / MotelService.MinutesPerDay;
+            if (bookingStart < service.ClockMinute && bookingStart / MotelService.MinutesPerDay == today)
+                bookingStart = CalendarArrival(today, service.ClockMinute);
+            float width = area.width / 3;
+            var row = new Rect(area.x, area.y, area.width, 30 * scale);
+            if (DrawButton(new Rect(row.x, row.y, width - 5 * scale, row.height), "Previous day") &&
+                bookingStart / MotelService.MinutesPerDay > service.ClockMinute / MotelService.MinutesPerDay)
+                bookingStart = CalendarArrival(bookingStart / MotelService.MinutesPerDay - 1, service.ClockMinute);
+            DrawFittedText(new Rect(row.x + width, row.y, width, row.height), MotelService.DisplayTime(bookingStart), detail);
+            if (DrawButton(new Rect(row.x + 2 * width, row.y, width, row.height), "Next day") &&
+                bookingStart / MotelService.MinutesPerDay < service.ClockMinute / MotelService.MinutesPerDay + 12)
+                bookingStart = CalendarArrival(bookingStart / MotelService.MinutesPerDay + 1, service.ClockMinute);
+            if (DrawButton(new Rect(row.x, row.y + 37 * scale, width - 5 * scale, row.height), $"{bookingNights} nights"))
                 bookingNights = bookingNights % 7 + 1;
-            if (DrawButton(new Rect(area.x, area.y + 35 * scale, w, 29 * scale), phone ? "Send request" : "Accept reservation"))
-                RequestBookingAction(BookRoomAction, new Vector3(bookingRoom, bookingLead + 8 * (int)bookingPreference, phone ? -bookingNights : bookingNights));
-            if (DrawButton(new Rect(area.x + w + 5 * scale, area.y + 35 * scale, 2 * w - 5 * scale, 29 * scale),
+            int end = MotelService.DepartureForNights(bookingStart, bookingNights);
+            if (bookingStart < service.ClockMinute || end > service.ClockMinute + 14 * MotelService.MinutesPerDay)
+            {
+                bookingRoom = NoRoom;
+                DrawFittedText(new Rect(row.x + width, row.y + 37 * scale, width - 5 * scale, row.height),
+                    "Dates outside booking window", label);
+            }
+            else
+            {
+                if (!service.RoomAvailable(bookingRoom, bookingStart, end))
+                    bookingRoom = service.SuggestRoom(bookingStart, end);
+                GUI.enabled = bookingRoom != NoRoom;
+                if (DrawButton(new Rect(row.x + width, row.y + 37 * scale, width - 5 * scale, row.height),
+                    bookingRoom == NoRoom ? "No room available" : $"Room {bookingRoom + 1}"))
+                    bookingRoom = service.SuggestRoom(bookingStart, end, bookingRoom);
+                GUI.enabled = true;
+            }
+            if (DrawButton(new Rect(row.x + 2 * width, row.y + 37 * scale, width, row.height),
                 MotelService.PreferenceLabel(bookingPreference)))
                 bookingPreference = (BookingPreference)(((int)bookingPreference + 1) % 4);
-            int arrival = Service.ClockMinute + bookingLead * MotelService.MinutesPerDay +
-                (phone ? PhoneArrivalLead : MotelService.ScheduleStep);
-            string status = bookingFeedback ?? $"Arrival · {MotelService.DisplayTime(arrival)}";
-            DrawFittedText(new Rect(area.x, area.y + 66 * scale, area.width, 22 * scale), status, label);
+            string quote = bookingRoom == NoRoom ? "Choose dates with availability." :
+                $"Check-out {MotelService.DisplayTime(end)} · ${service.NightlyRate(bookingRoom)}/night · ${service.NightlyRate(bookingRoom) * bookingNights} total";
+            DrawFittedText(new Rect(row.x, row.y + 75 * scale, row.width, row.height), quote, detail);
+            GUI.enabled = bookingRoom != NoRoom;
+            if (BookingButton(new Rect(row.x, row.y + 112 * scale, row.width, row.height), "Confirm reservation", DeskPriority))
+                RequestBookingAction(BookRoomAction, new Vector3(bookingRoom + (int)bookingPreference * MotelService.RoomCount, bookingStart, end));
+            GUI.enabled = true;
+            if (bookingFeedback != null)
+                DrawFittedText(new Rect(row.x, row.y + 150 * scale, row.width, row.height), bookingFeedback, label);
         }
 
         private static readonly string[] StaffNames = CountyPortfolio.StaffRoles;

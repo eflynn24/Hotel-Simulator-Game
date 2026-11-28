@@ -45,7 +45,7 @@ namespace DesertLantern
         private FixedList64Bytes<int> checkInMinutes;
         private FixedList32Bytes<byte> stayQuality;
         private FixedList32Bytes<byte> stayRates;
-        private int legacyWalkInMinute; // Retained in saved state for compatibility.
+        private int nextWalkInMinute;
         private ushort quietedRooms;
         private int reputation;
         private int listedRate;
@@ -251,7 +251,7 @@ namespace DesertLantern
         private void SerializeManagement<T>(BufferSerializer<T> serializer) where T : IReaderWriter
         {
             serializer.SerializeValue(ref reputation);
-            serializer.SerializeValue(ref legacyWalkInMinute);
+            serializer.SerializeValue(ref nextWalkInMinute);
             serializer.SerializeValue(ref quietedRooms);
             serializer.SerializeValue(ref listedRate);
             serializer.SerializeValue(ref advertisingUntil);
@@ -293,7 +293,7 @@ namespace DesertLantern
         }
 
         private bool ManagementEquals(MotelService other) =>
-            legacyWalkInMinute == other.legacyWalkInMinute && quietedRooms == other.quietedRooms &&
+            nextWalkInMinute == other.nextWalkInMinute && quietedRooms == other.quietedRooms &&
             reputation == other.reputation && listedRate == other.listedRate && advertisingUntil == other.advertisingUntil &&
             promotion == other.promotion && annexLand == other.annexLand && noiseComplaints == other.noiseComplaints &&
             incident == other.incident && incidentRoom == other.incidentRoom && incidentDue == other.incidentDue &&

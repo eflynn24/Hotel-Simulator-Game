@@ -92,6 +92,7 @@ namespace DesertLantern
                 service.cleaningTasks.Add(0);
                 service.completedCleaning.Add(0);
             }
+            service.stayBookingDetails.Length = RoomCount;
             service.InitializePropertyCare();
             service.InitializeManagement();
             return service;
@@ -107,7 +108,71 @@ namespace DesertLantern
         public BookingPreference ReservationPreference(int index) => (BookingPreference)((reservations[index * 4 + 3] >> 2) & 3);
         // Keep the approval flag in the existing serialized reservation record.
         private const int PendingReservation = 1 << 30;
-        public int ReservationRate(int index) => (reservations[index * 4 + 3] & ~PendingReservation) >> 4;
+        private const int ManualApproval = 1 << 15; // Reserved bit in the serialized staff flags.
+        private const int RateMask = 0xFFFF;
+        public bool ManualOnlineApproval => (staff & ManualApproval) != 0;
+        public void SetOnlineApproval(bool manual)
+        {
+            staff = (ushort)(manual ? staff | ManualApproval : staff & ~ManualApproval);
+        }
+
+        private static readonly string[] ReservationGuests =
+        {
+            "Mara Ortiz", "Eli Brooks", "June Park", "Vic Ramos", "Nora Reed", "Sam Bell",
+            "Lena Ruiz", "Tess Lane", "Rae King", "Luis Webb", "Jo Chen", "Max Vega"
+        };
+
+        public string ReservationGuest(int index) => ReservationGuests[ReservationGuestIndex(index)];
+        private int ReservationGuestIndex(int index)
+        {
+            int stored = (reservations[index * 4 + 3] >> 20) & 15;
+            return stored > 0 ? stored - 1 : GuestIndex(ReservationRoom(index), ReservationStart(index));
+        }
+
+        private static int GuestIndex(int room, int start) =>
+            (start / ScheduleStep + room) % ReservationGuests.Length;
+
+        private FixedList32Bytes<byte> stayBookingDetails;
+        private int confirmedOnlineBookings;
+        public int ConfirmedOnlineBookings => confirmedOnlineBookings;
+        public string StayGuest(int room) => stayBookingDetails.Length > room && stayBookingDetails[room] != 0
+            ? ReservationGuests[((stayBookingDetails[room] >> 2) & 15) - 1] : ReservationGuests[room];
+        public string StaySource(int room) => stayBookingDetails.Length > room && stayBookingDetails[room] != 0
+            ? ((BookingChannel)(stayBookingDetails[room] & 3)).ToString() : "Reservation";
+        public string StayRequest(int room) =>
+            NotebookRequest(room) ?? (stayBookingDetails.Length > room
+                ? PreferenceLabel((BookingPreference)(stayBookingDetails[room] >> 6))
+                : PreferenceLabel(BookingPreference.None));
+
+        public static int StayNights(int start, int end) => Math.Max(1, end / MinutesPerDay - start / MinutesPerDay);
+        public static int DepartureForNights(int start, int nights) =>
+            (start / MinutesPerDay + nights) * MinutesPerDay + 11 * 60;
+
+        public int SuggestRoom(int start, int end, int after = -1, int ignore = -1, bool readyNow = false)
+        {
+            for (int offset = 1; offset <= RoomCapacity; offset++)
+            {
+                int room = (after + offset) % RoomCapacity;
+                if (RoomAvailable(room, start, end, ignore) && (!readyNow || RoomReadyForGuest(room)))
+                    return room;
+            }
+            return -1;
+        }
+
+        private void SerializeBookingDetails<T>(BufferSerializer<T> serializer) where T : IReaderWriter
+        {
+            if (serializer.IsReader)
+                stayBookingDetails.Length = RoomCount;
+            for (int room = 0; room < RoomCount; room++)
+            {
+                byte details = stayBookingDetails.Length > room ? stayBookingDetails[room] : (byte)0;
+                serializer.SerializeValue(ref details);
+                if (serializer.IsReader)
+                    stayBookingDetails[room] = details;
+            }
+            serializer.SerializeValue(ref confirmedOnlineBookings);
+        }
+        public int ReservationRate(int index) => (reservations[index * 4 + 3] >> 4) & RateMask;
         public bool ReservationPending(int index) => (reservations[index * 4 + 3] & PendingReservation) != 0;
 
         public int FirstPendingReservation => FindPendingReservations(out _);
@@ -126,7 +191,7 @@ namespace DesertLantern
             count = 0;
             int first = -1;
             for (int index = 0; index < ReservationCount; index++)
-                if (ReservationPending(index))
+                if (ReservationPending(index) && ReservationChannel(index) != BookingChannel.WalkIn)
                 {
                     if (first < 0)
                         first = index;
@@ -138,7 +203,10 @@ namespace DesertLantern
         public bool AcceptReservation(int index, int start)
         {
             if (index < 0 || index >= ReservationCount || !ReservationPending(index) ||
-                ReservationStart(index) != start || start < ClockMinute ||
+                ReservationStart(index) != start || ReservationEnd(index) <= ClockMinute ||
+                (ReservationChannel(index) == BookingChannel.WalkIn
+                    ? ClockMinute >= start + WalkInPatience || !RoomReadyForGuest(ReservationRoom(index))
+                    : start < ClockMinute) ||
                 !RoomAvailable(ReservationRoom(index), start, ReservationEnd(index), index))
                 return false;
             reservations[index * 4 + 3] &= ~PendingReservation;
@@ -169,7 +237,7 @@ namespace DesertLantern
 
         public bool RoomAvailable(int room, int start, int end, int ignore = -1, bool extending = false)
         {
-            if (room < 0 || !RoomBuilt(room) || start >= end || RoomClosed(room) ||
+            if (!RoomBuilt(room) || start >= end || RoomUnusable(room) ||
                 !extending && (ActiveRooms & (1 << room)) != 0 && start < checkoutMinutes[room])
                 return false;
             for (int index = 0; index < ReservationCount; index++)
@@ -199,26 +267,27 @@ namespace DesertLantern
             reservations.Add(room);
             reservations.Add(start);
             reservations.Add(end);
-            reservations.Add((int)channel | ((int)preference << 2) | (rate << 4) | (pending ? PendingReservation : 0));
+            reservations.Add((int)channel | ((int)preference << 2) | ((rate & RateMask) << 4) | ((GuestIndex(room, start) + 1) << 20) | (pending ? PendingReservation : 0));
             return true;
         }
 
-        public void ModifyBooking(int index, int operation)
+        public bool ModifyBooking(int index, int operation)
         {
             if (index < 0 || index >= ReservationCount)
-                return;
+                return false;
             if (ReservationChannel(index) == BookingChannel.Conference && ReservationStart(index) == ConferenceStart)
             {
-                if (operation == 0 && !ConferenceInProgress)
-                    CancelConference();
-                return;
+                if (operation != 0 || ConferenceInProgress)
+                    return false;
+                CancelConference();
+                return true;
             }
             if (operation == 0)
             {
                 if (!ReservationPending(index) && ReservationStart(index) - ClockMinute <= 120)
                     Post(Account.Adjustments, 10);
                 RemoveBooking(index);
-                return;
+                return true;
             }
 
             int room = ReservationRoom(index);
@@ -230,16 +299,24 @@ namespace DesertLantern
                 case 2: start -= ScheduleStep; break;
                 case 3: end += MinutesPerDay; break;
                 case 4: end -= MinutesPerDay; break;
-                case 5: room = (room + 1) % RoomCapacity; break;
+                case 5:
+                    room = SuggestRoom(start, end, room, index);
+                    if (room == ReservationRoom(index))
+                        return false;
+                    break;
+                default: return false;
             }
             if (start < ClockMinute || end > ClockMinute + 14 * MinutesPerDay || !RoomAvailable(room, start, end, index))
-                return;
+                return false;
+            int guest = ReservationGuestIndex(index);
+            reservations[index * 4 + 3] = (reservations[index * 4 + 3] & ~(15 << 20)) | ((guest + 1) << 20);
             reservations[index * 4] = room;
             reservations[index * 4 + 1] = start;
             reservations[index * 4 + 2] = end;
+            return true;
         }
 
-        public void ExtendStay(int room) => TryExtendStay(room);
+        public bool ExtendStay(int room) => TryExtendStay(room);
 
         private bool TryExtendStay(int room)
         {
@@ -287,6 +364,7 @@ namespace DesertLantern
             AdvanceManagement(previous);
             AdvanceExpansion(previous);
             AdvanceDecisions(previous);
+            GenerateWalkIn();
             if (!IsBroken(0, Fixture.Router) && previous / MinutesPerDay != now / MinutesPerDay)
             {
                 int day = now / MinutesPerDay;
@@ -306,10 +384,12 @@ namespace DesertLantern
                 {
                     int room = (preferred + offset) % RoomCapacity;
                     if (BookAtRate(room, arrival, departure, BookingChannel.Online,
-                        (BookingPreference)(1 + day % 3), NightlyRate(room), pending: true))
+                        (BookingPreference)(1 + day % 3), NightlyRate(room), pending: ManualOnlineApproval))
                     {
                         expectedBookings--;
                         referred = true;
+                        if (!ManualOnlineApproval)
+                            confirmedOnlineBookings++;
                     }
                 }
                 if (referred && referredRoom >= 0)
@@ -317,7 +397,8 @@ namespace DesertLantern
             }
             for (int index = ReservationCount - 1; index >= 0; index--)
             {
-                if (ReservationEnd(index) <= now || ReservationPending(index) && ReservationStart(index) < now)
+                if (ReservationEnd(index) <= now || ReservationPending(index) && ReservationStart(index) +
+                    (ReservationChannel(index) == BookingChannel.WalkIn ? WalkInPatience - 1 : 0) < now)
                     RemoveBooking(index);
                 else if (previous < ReservationStart(index) && ReservationStart(index) <= now)
                     ClockSpeed = 1;
@@ -333,6 +414,43 @@ namespace DesertLantern
                 if (now >= departure + ((heldCheckout & (1 << room)) != 0 ? 240 : 180))
                     CompleteCheckout(room, false);
             }
+        }
+
+        private const int WalkInPatience = 120;
+
+        private void GenerateWalkIn()
+        {
+            int hour = ClockMinute % MinutesPerDay / 60;
+            if (hour < 9 || hour >= 20 || ClockMinute < Math.Max(OpeningMinute + 120, nextWalkInMinute))
+                return;
+            nextWalkInMinute = ClockMinute + Math.Max(180, 480 - Demand * 3);
+            int nights = 1 + ClockMinute / 60 % 3;
+            int end = DepartureForNights(ClockMinute, nights);
+            int room = SuggestRoom(ClockMinute, end, readyNow: true);
+            if (room >= 0)
+                BookAtRate(room, ClockMinute, end, BookingChannel.WalkIn, BookingPreference.None,
+                    NightlyRate(room), pending: true);
+        }
+
+        public bool DeskArrivalReady(int room)
+        {
+            if (!RoomReadyForGuest(room))
+                return false;
+            int index = NextBooking(room);
+            return index >= 0 && (BookingDue(room) || ReservationPending(index) &&
+                ReservationChannel(index) == BookingChannel.WalkIn && ReservationStart(index) <= ClockMinute &&
+                ClockMinute < ReservationStart(index) + WalkInPatience);
+        }
+
+        public int NextDeskArrival()
+        {
+            int room = NextArrival();
+            if (room >= 0)
+                return room;
+            for (int candidate = 0; candidate < RoomCapacity; candidate++)
+                if (DeskArrivalReady(candidate))
+                    return candidate;
+            return -1;
         }
 
         public int StayStart(int room) => checkInMinutes[room];
@@ -518,6 +636,9 @@ namespace DesertLantern
             int priceStarts = ReservationStart(booking);
             int rate = ReservationRate(booking);
             BookingPreference preference = ReservationPreference(booking);
+            stayBookingDetails.Length = RoomCount;
+            stayBookingDetails[room] = (byte)(((int)preference << 6) |
+                ((ReservationGuestIndex(booking) + 1) << 2) | (int)ReservationChannel(booking));
             InitializeGuestProfile(room, preference, rate);
             ActiveReservations |= (ushort)bit;
             RemoveBooking(booking);
@@ -543,7 +664,7 @@ namespace DesertLantern
                 BagRoom = (byte)room;
                 Bag = LuggageStatus.InCar;
             }
-            Post(Account.RoomRevenue, rate * Math.Max(1, departure / MinutesPerDay - priceStarts / MinutesPerDay));
+            Post(Account.RoomRevenue, rate * StayNights(priceStarts, departure));
             Post(Account.Financing, 20);
             return true;
         }
@@ -766,6 +887,7 @@ namespace DesertLantern
             SerializeState(serializer);
             SerializeDecisions(serializer);
             SerializePhone(serializer);
+            SerializeBookingDetails(serializer);
         }
 
         private void SerializeState<T>(BufferSerializer<T> serializer) where T : IReaderWriter
@@ -837,6 +959,7 @@ namespace DesertLantern
             DeliveredBags == other.DeliveredBags && BagRoom == other.BagRoom &&
             Carrier == other.Carrier && Bag == other.Bag && Delivery == other.Delivery &&
             deliveryCart == other.deliveryCart && activeOrderNumber == other.activeOrderNumber && orderSequence == other.orderSequence &&
-            queuedCarts.Equals(other.queuedCarts) && queuedDue.Equals(other.queuedDue) && completedOrders.Equals(other.completedOrders) && completedCarts.Equals(other.completedCarts) && DeliveryDue.Equals(other.DeliveryDue) && SupplyCarrier == other.SupplyCarrier && HousekeepingEquals(other) && OperationsEqual(other) && PropertyCareEquals(other) && GuestLifeEquals(other) && ExpansionEquals(other) && ManagementEquals(other) && DecisionsEqual(other) && PhoneEquals(other);
+            queuedCarts.Equals(other.queuedCarts) && queuedDue.Equals(other.queuedDue) && completedOrders.Equals(other.completedOrders) && completedCarts.Equals(other.completedCarts) && DeliveryDue.Equals(other.DeliveryDue) && SupplyCarrier == other.SupplyCarrier && HousekeepingEquals(other) && OperationsEqual(other) && PropertyCareEquals(other) && GuestLifeEquals(other) && ExpansionEquals(other) && ManagementEquals(other) && DecisionsEqual(other) && PhoneEquals(other) &&
+            stayBookingDetails.Equals(other.stayBookingDetails) && confirmedOnlineBookings == other.confirmedOnlineBookings;
     }
 }

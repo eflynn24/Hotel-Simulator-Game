@@ -97,15 +97,13 @@ public static partial class CoreGameplayChecks
         Check(((string)Call(service, "GuestReview", 0)).Contains("unresolved") &&
             (float)Property(service, "CustomerStars") <= 2 && (int)Property(service, "Demand") < originalDemand,
             "integration: poor service lowers rating and demand");
-        int before = (int)Property(service, "ReservationCount");
         Call(service, "AdvanceClock", 1440);
-        int bookings = (int)Property(service, "ReservationCount") - before;
+        int bookings = (int)Property(service, "ConfirmedOnlineBookings");
 
         object control = NewMotel();
         Set(control, "reputation", 55);
-        int controlBefore = (int)Property(control, "ReservationCount");
         Call(control, "AdvanceClock", 1440);
-        Check(bookings == 1 && (int)Property(control, "ReservationCount") - controlBefore == 2,
+        Check(bookings == 1 && (int)Property(control, "ConfirmedOnlineBookings") == 2,
             "integration: poor reviews actually reduce generated bookings");
     }
 

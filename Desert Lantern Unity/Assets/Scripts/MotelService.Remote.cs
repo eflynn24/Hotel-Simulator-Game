@@ -41,7 +41,9 @@ namespace DesertLantern
 
             if (StaffHired(StaffRole.Bellhop))
                 MoveRemoteLuggage();
-            int arrival = NextArrival();
+            int arrival = NextDeskArrival();
+            if (arrival >= 0 && !BookingDue(arrival) && StaffHired(StaffRole.Receptionist))
+                AcceptReservation(NextBooking(arrival), BookingStart(arrival));
             if (StaffHired(StaffRole.Receptionist) && arrival >= 0)
             {
                 CheckInGuest(arrival, BookingStart(arrival), ClockMinute, true);
@@ -57,7 +59,8 @@ namespace DesertLantern
         private void WorkReception()
         {
             for (int index = 0; index < ReservationCount; index++)
-                if (ReservationPending(index))
+                if (ReservationPending(index) && ReservationChannel(index) != BookingChannel.WalkIn &&
+                    !(ManualOnlineApproval && ReservationChannel(index) == BookingChannel.Online))
                     AcceptReservation(index, ReservationStart(index));
             int checkout;
             while ((checkout = CheckoutWaiting()) >= 0)
@@ -67,11 +70,9 @@ namespace DesertLantern
             TryAnswerPhone(ReceptionPhoneWorker);
             if (!CanBookPhoneFor(ReceptionPhoneWorker))
                 return;
-            int start = (ClockMinute / MinutesPerDay + 1) * MinutesPerDay + 15 * 60;
-            for (int room = 0; room < RoomCapacity; room++)
-                if (Book(room, start, start + 20 * 60, BookingChannel.Telephone))
-                    break;
-            FinishPhoneBooking();
+            int room = SuggestRoom(PhoneArrival, DepartureForNights(PhoneArrival, PhoneNights));
+            if (!AcceptPhoneReservation(room, NextPhoneCall, ReceptionPhoneWorker))
+                FinishPhoneBooking();
         }
 
         private void MoveRemoteLuggage()

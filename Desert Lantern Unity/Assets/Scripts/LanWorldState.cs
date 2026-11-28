@@ -23,7 +23,7 @@ namespace DesertLantern
 
     internal struct LanMotel : INetworkSerializable, IEquatable<LanMotel>
     {
-        public int Occupied;
+        public int Occupied, GuestArrivalMinute;
         public bool GuestPresent, GuestArriving, VehicleArriving;
         public float ArrivalCarProgress;
         public bool Escorting, DeskCheckInApproved;
@@ -36,6 +36,7 @@ namespace DesertLantern
         public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
         {
             serializer.SerializeValue(ref Occupied);
+            serializer.SerializeValue(ref GuestArrivalMinute);
             serializer.SerializeValue(ref GuestPresent);
             serializer.SerializeValue(ref GuestArriving);
             serializer.SerializeValue(ref VehicleArriving);
@@ -49,7 +50,7 @@ namespace DesertLantern
             Service.NetworkSerialize(serializer);
         }
 
-        public bool Equals(LanMotel other) => Occupied == other.Occupied && GuestPresent == other.GuestPresent && GuestArriving == other.GuestArriving &&
+        public bool Equals(LanMotel other) => Occupied == other.Occupied && GuestArrivalMinute == other.GuestArrivalMinute && GuestPresent == other.GuestPresent && GuestArriving == other.GuestArriving &&
             VehicleArriving == other.VehicleArriving && ArrivalCarProgress.Equals(other.ArrivalCarProgress) &&
             DeskCheckInApproved == other.DeskCheckInApproved && Escorting == other.Escorting && Guest.Equals(other.Guest) && Bellhop.Equals(other.Bellhop) &&
             VisitorRoom == other.VisitorRoom && Visitor.Equals(other.Visitor) && Service.Equals(other.Service);
@@ -87,6 +88,13 @@ namespace DesertLantern
         [Rpc(SendTo.Server, Delivery = RpcDelivery.Unreliable)]
         internal void MoveRpc(Vector2 direction, bool run, RpcParams rpc = default) =>
             LanSession.Active?.MovementReceived?.Invoke(rpc.Receive.SenderClientId, direction, run);
+
+        internal void SendBookingResult(ulong client, byte action, bool success, Vector3 selection) =>
+            BookingResultRpc(action, success, selection, RpcTarget.Single(client, RpcTargetUse.Temp));
+
+        [Rpc(SendTo.SpecifiedInParams, InvokePermission = RpcInvokePermission.Owner)]
+        private void BookingResultRpc(byte action, bool success, Vector3 selection, RpcParams rpc = default) =>
+            LanSession.Active?.BookingResultReceived?.Invoke(action, success, selection);
 
         [Rpc(SendTo.Server)]
         internal void ActionRpc(byte action, Vector3 position, RpcParams rpc = default) =>

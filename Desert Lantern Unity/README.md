@@ -12,19 +12,24 @@ This Unity 6 prototype starts over a 3D view of the county. Select
 - Start with **$230**. Guiding a guest to their room adds **$65** once.
   Follow the luggage prompt to the guest's car, pick up the case with **E**
   and set it down inside the assigned room for a **$10** tip.
-- At the reception counter, press **E** or click the computer to open
-  **Reservations**, **Booked**, **Guests**, **Staff**, **Supplies**, or
-  **Reviews**. Set arrival and departure in 15-minute increments under
-  **Reservations**. Confirmed stays move to **Booked** with their arrival time. The HUD and reception wall clock share the LAN host's time.
-  A full motel day takes four real minutes at normal speed. Click
-  **Time x1** in the HUD to cycle through 2x, 4x, and 8x. Time returns to
-  normal when a booking is due, checkout opens, or an order arrives. The
-  headless host pauses time when no players are connected. Reception
-  handles the reception line one guest at a time. Outdoor lights come on
-  at dusk along the walkway, porch, and parking lot.
-- At departure time, press **E** at reception to check the guest out. Guests
-  leave automatically after an hour of motel time. The **Reviews** tab shows
-  feedback on check-in, luggage service, and checkout.
+- Use the reception computer's **Bookings** tab. Pick a date and room on the
+  **Room calendar**, adjust the stay length or special request, then confirm.
+  The **Arrivals** and **Departures** lists show each day's activity, and
+  selecting a reservation opens its details and edit controls.
+- Walk-ins tell you how many nights they need. Confirm the suggested room
+  in **Arrivals**, take its key from behind the counter, and give the key to
+  the guest. For a telephone booking, answer the desk phone to see the
+  caller's dates and accept or decline the suggested room.
+- Online bookings confirm automatically and show a notification. Use
+  **Online: Auto-confirm** on the calendar to switch to manual approval.
+  Review those bookings under **Requests**.
+- When a departing guest reaches the desk, use **Departures** to check them
+  out. Checkout creates housekeeping work. Hired receptionists can handle
+  calls, arrivals, and departures. Guests who leave unattended count as
+  missed checkouts.
+- A full motel day takes four real minutes at normal speed. Use the HUD's
+  **Time x1** button to cycle through 2x, 4x, and 8x. The headless LAN host
+  pauses the clock while no players are connected.
 - Order cleaning kits, towels, or linen under **Supplies**. Orders charge
   cash immediately and arrive after 72 motel minutes. Pick up the crate at
   the delivery bay with **E**, then use **E** at the shelves inside reception

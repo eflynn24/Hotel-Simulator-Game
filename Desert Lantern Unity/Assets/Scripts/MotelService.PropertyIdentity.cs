@@ -27,8 +27,7 @@ namespace DesertLantern
             if (!OwnsRoom(reservation.Room) || (uint)index >= ReservationCount ||
                 ReservationRoom(index) != reservation.Room.Number || ReservationStart(index) != reservation.Arrival)
                 return false;
-            ModifyBooking(index, operation);
-            return true;
+            return ModifyBooking(index, operation);
         }
 
         public bool ApplyGuestRequest(PropertyRequest request, bool cancel)
@@ -68,6 +67,7 @@ namespace DesertLantern
                 {
                     Service.SerializeDecisions(serializer);
                     Service.SerializePhone(serializer);
+                    Service.SerializeBookingDetails(serializer);
                 }
                 else
                 {
@@ -76,6 +76,10 @@ namespace DesertLantern
                         Service.SerializeDecisions(serializer);
                     if (reader.Position < reader.Length)
                         Service.SerializePhone(serializer);
+                    if (reader.Position < reader.Length)
+                        Service.SerializeBookingDetails(serializer);
+                    else
+                        Service.stayBookingDetails.Length = RoomCount;
                 }
             }
 

@@ -52,6 +52,7 @@ public static partial class CoreGameplayChecks
         assertions = 0;
         Reservations();
         OnlineApproval();
+        WalkIn();
         DeskCheckout();
         Phone();
         Requests();
@@ -78,6 +79,11 @@ public static partial class CoreGameplayChecks
         Check((int)Call(service, "ReservationRoom", 1) == 1 &&
             (int)Call(service, "ReservationStart", 1) == 3840, "move preserves dates");
         Check(Call(service, "ReservationChannel", 0).ToString() == "Telephone", "preserve calendar channel");
+        object transfer = NewMotel();
+        Check(Book(transfer, 0, 1300, 2100) && Book(transfer, 1, 1400, 2000), "transfer fixtures");
+        string guest = (string)Call(transfer, "ReservationGuest", 0);
+        Check(Yes(transfer, "ModifyBooking", 0, 5) && (int)Call(transfer, "ReservationRoom", 0) == 2 &&
+            (string)Call(transfer, "ReservationGuest", 0) == guest, "room transfer skips conflicts and retains the guest");
         Set(service, "ClockMinute", 959);
         Check(!Yes(service, "BookingDue", 0), "arrival held until start");
         Set(service, "ClockMinute", 960);
@@ -114,6 +120,12 @@ public static partial class CoreGameplayChecks
     {
         object service = NewMotel();
         Call(service, "AdvanceClock", 1440);
+        Check(!Yes(service, "ReservationPending", 0) && (int)Property(service, "ConfirmedOnlineBookings") > 0,
+            "online bookings confirm by default and publish a notification");
+        service = NewMotel();
+        Call(service, "SetOnlineApproval", true);
+        service = RoundTrip(service, "SavedState", true);
+        Call(service, "AdvanceClock", 1440);
         int start = (int)Call(service, "ReservationStart", 0);
         int room = (int)Call(service, "ReservationRoom", 0);
         Check(Yes(service, "ReservationPending", 0) && (int)Call(service, "ReservationRate", 0) == 65,
@@ -122,6 +134,22 @@ public static partial class CoreGameplayChecks
         Check(!Yes(service, "BookingDue", room), "unapproved reservation cannot spawn a guest");
         Check(Yes(service, "AcceptReservation", 0, start) && Yes(service, "BookingDue", room) &&
             !Yes(service, "AcceptReservation", 0, start), "accepted reservation can spawn once its scheduled time arrives");
+    }
+
+    private static void WalkIn()
+    {
+        object service = NewMotel();
+        Call(service, "AdvanceClock", 840);
+        int room = (int)Call(service, "NextDeskArrival");
+        Check(room >= 0 && (int)Call(service, "NextArrival") == -1 &&
+            Call(service, "ReservationChannel", 0).ToString() == "WalkIn", "walk-in reaches reception before approval");
+        string guest = (string)Call(service, "ReservationGuest", 0);
+        Call(service, "AdvanceClock", 850);
+        Check(Yes(service, "AcceptReservation", 0, 840) && Yes(service, "CheckIn", room, 840, 850),
+            "reception can confirm and admit walk-in after arrival");
+        object saved = RoundTrip(service, "SavedState", true);
+        Check((string)Call(saved, "StayGuest", room) == guest && (string)Call(saved, "StaySource", room) == "WalkIn",
+            "active stay keeps its guest and source after saving");
     }
 
     private static void DeskCheckout()
@@ -142,6 +170,16 @@ public static partial class CoreGameplayChecks
 
     private static void Phone()
     {
+        object direct = NewMotel();
+        int ring = Number(direct, "NextPhoneCall");
+        Call(direct, "AdvanceClock", ring);
+        Yes(direct, "TryAnswerPhone", 1ul);
+        Check(!Yes(direct, "AcceptPhoneReservation", 0, ring, 2ul) &&
+            Yes(direct, "AcceptPhoneReservation", 0, ring, 1ul) &&
+            !Yes(direct, "ReservationPending", 0) &&
+            !Yes(direct, "AcceptPhoneReservation", 0, ring, 1ul),
+            "call owner confirms a prefilled telephone booking once");
+
         object request = NewMotel();
         Call(request, "AdvanceClock", Number(request, "NextPhoneCall"));
         Check(Yes(request, "TryAnswerPhone", 1ul), "bookings desk receives the reservation call");
@@ -436,6 +474,12 @@ public static partial class CoreGameplayChecks
             Vector3 position = (Vector3)Property(walker, "Position");
             Check(Vector2.Distance(new Vector2(position.x, position.z), new Vector2(computer.x, computer.z)) < .25f,
                 $"reception aisle has physical clearance for the player, reached {position}");
+            var rack = (Vector3)view.GetField("KeyPickupPoint", BindingFlags.Static | BindingFlags.NonPublic).GetValue(null);
+            routeMethod.Invoke(null, new object[] { route, position, rack });
+            for (int step = 0; step < 240 && route.Count > 0; step++)
+                drive.Invoke(null, new object[] { walker, route, Vector3.zero, false, 1f / 60f });
+            position = (Vector3)Property(walker, "Position");
+            Check(Vector3.Distance(position, rack) < .35f, $"key rack can be reached from behind the desk, reached {position}");
         }
         finally
         {

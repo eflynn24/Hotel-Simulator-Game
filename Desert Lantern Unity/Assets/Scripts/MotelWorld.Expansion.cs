@@ -115,7 +115,7 @@ namespace DesertLantern
                 Piece(bench, "Bench cushion", new Vector3(0, .53f, 0), new Vector3(.64f, .12f, .94f), teal);
                 furnitureProps[location, 0] = bench.gameObject;
 
-                Transform art = Node("Reception artwork", new Vector3(-10.57f, 1.77f, 8.53f));
+                Transform art = Node("Reception artwork", new Vector3(-10.57f, 1.77f, 8.53f + ReceptionExtension));
                 Piece(art, "Picture frame", Vector3.zero, new Vector3(.46f, .34f, .064f), oak);
                 Piece(art, "Desert landscape", new Vector3(0, 0, -.039f), new Vector3(.39f, .26f, .021f), cream);
                 Piece(art, "Landscape horizon", new Vector3(0, -.05f, -.055f), new Vector3(.35f, .08f, .013f), teal);

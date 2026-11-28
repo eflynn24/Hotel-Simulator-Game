@@ -172,9 +172,7 @@ namespace DesertLantern
             {
                 if (string.IsNullOrEmpty(record.operationalState))
                     continue;
-                using var reader = new FastBufferReader(Convert.FromBase64String(record.operationalState), Allocator.Temp);
-                reader.ReadNetworkSerializable<MotelService.SavedState>(out MotelService.SavedState state);
-                record.Detailed = state.ForProperty(record.propertyId);
+                record.Detailed = DecodeMotel(record.operationalState, record.propertyId);
             }
             if (motel.Detailed.Property == PropertyId.None)
                 motel.Detailed = MotelService.New();
@@ -238,6 +236,20 @@ namespace DesertLantern
             return new CountyPortfolio(new SaveData());
         }
 
+        internal static string EncodeMotel(MotelService service)
+        {
+            using var writer = new FastBufferWriter(2048, Allocator.Temp, 8192);
+            writer.WriteNetworkSerializable(new MotelService.SavedState { Service = service });
+            return Convert.ToBase64String(writer.ToArray());
+        }
+
+        internal static MotelService DecodeMotel(string encoded, PropertyId property)
+        {
+            using var reader = new FastBufferReader(Convert.FromBase64String(encoded), Allocator.Temp);
+            reader.ReadNetworkSerializable<MotelService.SavedState>(out MotelService.SavedState state);
+            return state.ForProperty(property);
+        }
+
         public void Save()
         {
             RecordMotelLedger();
@@ -245,9 +257,7 @@ namespace DesertLantern
             {
                 if (record.Detailed.Property == PropertyId.None)
                     continue;
-                using var writer = new FastBufferWriter(2048, Allocator.Temp, 8192);
-                writer.WriteNetworkSerializable(new MotelService.SavedState { Service = record.Detailed });
-                record.operationalState = Convert.ToBase64String(writer.ToArray());
+                record.operationalState = EncodeMotel(record.Detailed);
             }
             PlayerPrefs.SetString(SaveKey, JsonUtility.ToJson(save));
             PlayerPrefs.Save();
@@ -382,6 +392,10 @@ namespace DesertLantern
                 {
                     Motel.AdvanceClock(next, true);
                     Motel.AdvanceDelivery();
+                    int confirmed = Motel.ConfirmedOnlineBookings - motelBeforeShift.ConfirmedOnlineBookings;
+                    if (confirmed > 0)
+                        AddNote(MotelSlot, confirmed == 1 ? "New online reservation confirmed." :
+                            $"{confirmed} new online reservations confirmed.");
                 }
                 if (nextDay || next == nextShift)
                     RecordMotelChanges(motelBeforeShift);

@@ -21,6 +21,7 @@ namespace DesertLantern
         internal readonly Dictionary<ulong, byte> Slots = new Dictionary<ulong, byte>();
         internal Action<ulong, Vector2, bool> MovementReceived;
         internal Action<ulong, byte, Vector3> ActionReceived;
+        internal Action<byte, bool, Vector3> BookingResultReceived;
         internal LanWorldState State { get; private set; }
         private NetworkManager manager;
         private UnityTransport transport;
@@ -114,7 +115,7 @@ namespace DesertLantern
             session.manager = session.gameObject.AddComponent<NetworkManager>();
             session.manager.NetworkConfig = new NetworkConfig
             {
-                ProtocolVersion = 20,
+                ProtocolVersion = 21,
                 EnableSceneManagement = false,
                 ConnectionApproval = true,
                 NetworkTransport = session.transport,

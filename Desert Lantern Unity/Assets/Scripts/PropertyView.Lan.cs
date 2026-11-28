@@ -66,7 +66,9 @@ namespace DesertLantern
         }
 
         private string hostAddress;
-        private float nextInput, nextSnapshot;
+        private const string LanSaveKey = "DesertLantern.LanMotel";
+        private float nextInput, nextSnapshot, nextLanSave;
+        private MotelService lastLanSave;
         private readonly Dictionary<ulong, Peer> peers = new Dictionary<ulong, Peer>();
         private readonly List<ulong> departing = new List<ulong>();
 
@@ -83,12 +85,48 @@ namespace DesertLantern
         private void InitializeLan()
         {
             lan = LanSession.Active;
-            if (lan == null || !lan.IsHost)
+            if (lan == null)
+                return;
+            lan.BookingResultReceived = ReceiveBookingResult;
+            if (!lan.IsHost)
                 return;
 
+            LoadLanMotel();
             hostAddress = LanSession.FindAddress();
             lan.MovementReceived = ReceiveMovement;
             lan.ActionReceived = ReceiveAction;
+        }
+
+        private void LoadLanMotel()
+        {
+            string saved = PlayerPrefs.GetString(LanSaveKey);
+            if (saved.Length > 0)
+            {
+                try
+                {
+                    lanService = CountyPortfolio.DecodeMotel(saved, PropertyId.RoadsideMotel);
+                    lanService.RecoverReceptionSession();
+                    lanService.RecoverBag(lanService.Carrier);
+                    lanService.RecoverSupply(lanService.SupplyCarrier);
+                    lanService.RecoverHousekeepingCart(lanService.CartCarrier);
+                }
+                catch (System.Exception exception)
+                {
+                    Debug.LogWarning($"LAN motel save could not be loaded: {exception.Message}");
+                    PlayerPrefs.SetString(LanSaveKey + ".recovery", saved);
+                    lanService = MotelService.New();
+                }
+            }
+            lastLanSave = lanService;
+        }
+
+        private void SaveLanMotel()
+        {
+            if (lan == null || !lan.IsHost || lanService.Equals(lastLanSave))
+                return;
+            PlayerPrefs.SetString(LanSaveKey, CountyPortfolio.EncodeMotel(lanService));
+            PlayerPrefs.Save();
+            lastLanSave = lanService;
         }
 
         private static Vector3 SlotSpawn(byte slot) =>
@@ -115,6 +153,11 @@ namespace DesertLantern
             }
 
             ReconcileHostPeers();
+            if (Time.unscaledTime >= nextLanSave)
+            {
+                SaveLanMotel();
+                nextLanSave = Time.unscaledTime + 15;
+            }
             foreach (var entry in peers)
             {
                 if (entry.Key == lan.LocalId)
@@ -207,7 +250,7 @@ namespace DesertLantern
             {
                 Occupied = Occupied, Escorting = escorting, GuestPresent = guest != null, GuestArriving = guestArriving,
                 VehicleArriving = vehicleArriving, ArrivalCarProgress = arrivalCarProgress,
-                DeskCheckInApproved = deskCheckInApproved,
+                DeskCheckInApproved = deskCheckInApproved, GuestArrivalMinute = guestArrivalMinute,
                 Guest = guest == null ? default : guest.Pose, Service = Service,
                 Bellhop = bellhop == null ? default : bellhop.Pose,
                 VisitorRoom = visitorRoom, Visitor = serviceVisitor == null ? default : serviceVisitor.Pose
@@ -252,7 +295,10 @@ namespace DesertLantern
             Occupied = shared.Occupied;
             Service = shared.Service;
             escorting = shared.Escorting;
+            if (!shared.GuestPresent || shared.GuestArrivalMinute != guestArrivalMinute)
+                selectedKeys.Clear();
             deskCheckInApproved = shared.DeskCheckInApproved;
+            guestArrivalMinute = shared.GuestArrivalMinute;
             if (guestArriving && !shared.GuestArriving)
                 guestWaitStart = Service.ClockMinute;
             guestArriving = shared.GuestArriving;
@@ -324,11 +370,9 @@ namespace DesertLantern
             else if (action == PurchaseAction && Finite(position.x) &&
                 position.x >= 0 && position.x < MotelService.Catalog.Length)
                 TryPurchase((int)position.x, peer.Walker.Position);
-            else if (action == DeskCheckInAction || action == DeskCheckOutAction || action == ConfirmReservationAction)
+            else if (action == DeskCheckInAction || action == DeskCheckOutAction || action == ConfirmReservationAction || action == OnlineApprovalAction)
                 HandleDeskAction(action, position, peer.Walker.Position);
-            else if ((action == BookRoomAction || action == EditBookingAction) &&
-                Mathf.Abs(position.x) <= Guests.Length && Mathf.Abs(position.y) <= 31 && Mathf.Abs(position.z) <= int.MaxValue / 2 &&
-                position.x == Mathf.Floor(position.x) && position.y == Mathf.Floor(position.y) && position.z == Mathf.Floor(position.z))
+            else if (action == BookRoomAction || action == EditBookingAction || action == AcceptPhoneAction)
                 ChangeBooking(action, position, peer.Walker.Position, id);
             else if (action == DoorAction && Finite(position.x) && position.x >= 0 && position.x < Guests.Length)
                 ToggleDoor((int)position.x, peer.Walker.Position);

@@ -18,13 +18,14 @@ namespace DesertLantern
         private static readonly Color DeskDanger = new Color32(117, 58, 43, 255);
         private static readonly Color DeskCard = new Color32(52, 39, 29, 255);
         private static readonly Color DeskPaper = new Color32(233, 214, 184, 255);
-        private static readonly string[] DeskFilters = { "All rooms", "Available", "Reserved", "In house", "Maintenance" };
-        private static readonly Color[] DeskStates = { DeskCard, DeskAvailable, DeskReserved, DeskOccupied, DeskMaintenance };
+        private static readonly string[] DeskFilters = { "All rooms", "Available", "Reserved", "Occupied", "Unavailable", "Dirty" };
+        private static readonly Color[] DeskStates = { DeskCard, DeskAvailable, DeskReserved, DeskOccupied, DeskMaintenance, DeskDanger };
         private ReservationView reservationView;
         private int calendarFilter;
         private int selectedRoom = NoRoom;
         private int selectedArrival = -1;
         private bool editingReservation;
+        private int rosterOffset;
         private bool confirmingCancellation;
         private Vector2 reservationScroll;
         private GUIStyle deskButton;
@@ -105,6 +106,7 @@ namespace DesertLantern
         {
             if (index < 0)
                 return;
+            reservationEditFeedback = null;
             selectedRoom = service.ReservationRoom(index);
             selectedArrival = service.ReservationStart(index);
             editingReservation = confirmingCancellation = false;
@@ -112,6 +114,7 @@ namespace DesertLantern
 
         private void SelectStay(int room)
         {
+            reservationEditFeedback = null;
             selectedRoom = room;
             selectedArrival = -1;
             editingReservation = confirmingCancellation = false;
@@ -148,7 +151,7 @@ namespace DesertLantern
                 DeskFrame(main, DeskCard, DeskTrim, 7 * scale, scale);
                 Rect form = InsetDesk(main, 14 * scale);
                 DrawFittedText(new Rect(form.x, form.y, form.width, 34 * scale), "New reservation", detail);
-                DrawBookingForm(new Rect(form.x, form.y + 41 * scale, form.width, 89 * scale), scale, false);
+                DrawBookingForm(new Rect(form.x, form.y + 41 * scale, form.width, 200 * scale), scale, service);
                 return;
             }
             if (reservationView == ReservationView.Decisions)
@@ -179,15 +182,14 @@ namespace DesertLantern
             Rect row = new Rect(panel.x + 7 * scale, panel.y + 7 * scale, panel.width - 14 * scale, 30 * scale);
             if (BookingButton(row, "+ New reservation", DeskPriority))
             {
-                reservationView = ReservationView.New;
-                bookingFeedback = null;
+                BeginBooking(service, service.ClockMinute / MotelService.MinutesPerDay);
             }
 
             int today = service.ClockMinute / MotelService.MinutesPerDay;
             int arrivals = 0;
             int departures = 0;
             for (int index = 0; index < service.ReservationCount; index++)
-                if (!service.ReservationPending(index) && service.ReservationStart(index) / MotelService.MinutesPerDay == today)
+                if (IsExpectedArrival(service, index) && service.ReservationStart(index) / MotelService.MinutesPerDay == today)
                     arrivals++;
             for (int room = 0; room < service.RoomCapacity; room++)
                 if ((service.ActiveRooms & (1 << room)) != 0 && service.DepartureMinute(room) / MotelService.MinutesPerDay <= today)
@@ -202,6 +204,10 @@ namespace DesertLantern
                 service.PendingDecision == ManagementDecision.None ? "Decisions" : "Decisions · 1");
             if (reservationView != ReservationView.Calendar)
                 return;
+
+            var approval = new Rect(row.x, panel.yMax - 30 * scale, row.width, 23 * scale);
+            if (BookingButton(approval, service.ManualOnlineApproval ? "Online: Manual" : "Online: Auto-confirm", DeskSurface))
+                RequestBookingAction(OnlineApprovalAction, new Vector3(service.ManualOnlineApproval ? 0 : 1, 0, 0));
 
             row.y += 5 * scale;
             DrawFittedText(row, "Filter rooms", label);
@@ -221,6 +227,7 @@ namespace DesertLantern
             {
                 reservationView = view;
                 reservationScroll = Vector2.zero;
+                rosterOffset = 0;
                 editingReservation = confirmingCancellation = false;
                 MotelService service = Service;
                 if (view == ReservationView.Requests)
@@ -235,9 +242,11 @@ namespace DesertLantern
 
         private static int BookingForDay(MotelService service, int room, int start)
         {
+            int arrival = CalendarArrival(start / MotelService.MinutesPerDay, service.ClockMinute);
+            int departure = MotelService.DepartureForNights(start, 1);
             for (int index = 0; index < service.ReservationCount; index++)
-                if (service.ReservationRoom(index) == room && service.ReservationStart(index) < start + MotelService.MinutesPerDay &&
-                    service.ReservationEnd(index) > start)
+                if (service.ReservationRoom(index) == room && service.ReservationStart(index) < departure &&
+                    service.ReservationEnd(index) > arrival)
                     return index;
             return -1;
         }
@@ -246,9 +255,14 @@ namespace DesertLantern
         {
             if (service.RoomUnusable(room))
                 return 4;
-            if ((service.ActiveRooms & (1 << room)) != 0 && service.DepartureMinute(room) > start)
+            int arrival = CalendarArrival(start / MotelService.MinutesPerDay, service.ClockMinute);
+            if ((service.ActiveRooms & (1 << room)) != 0 &&
+                service.DepartureMinute(room) > (start <= service.ClockMinute ? service.ClockMinute : arrival))
                 return 3;
-            return booking >= 0 ? 2 : 1;
+            if (booking >= 0)
+                return 2;
+            return start / MotelService.MinutesPerDay == service.ClockMinute / MotelService.MinutesPerDay &&
+                service.RoomDirty(room) ? 5 : 1;
         }
 
         private void DrawReservationCalendar(Rect area, float scale, MotelService service)
@@ -262,7 +276,7 @@ namespace DesertLantern
             DrawFittedText(new Rect(week.x + 33 * scale, week.y, 153 * scale, header),
                 $"Days {first + 1} to {first + 7}", label);
             if (BookingButton(new Rect(week.xMax - header, week.y, header, header), ">", DeskSurface))
-                calendarOffset = Mathf.Min(14, calendarOffset + 7);
+                calendarOffset = Mathf.Min(7, calendarOffset + 7);
 
             float gridY = area.y + 31 * scale;
             float gutter = 62 * scale;
@@ -296,29 +310,24 @@ namespace DesertLantern
                     int state = CalendarState(service, room, start, booking);
                     var cell = new Rect(area.x + gutter + day * column, y, column - 2 * scale, row - 2 * scale);
                     bool highlighted = state == 3 && selectedRoom == room && selectedArrival == -1 || booking >= 0 && booking == selected;
-                    string caption = state == 4 ? "Service" : state == 3 ? "In house" :
-                        booking >= 0 ? service.ReservationPending(booking) ? "Request" : "Reserved" : "";
+                    string caption = state == 4 ? "Unavailable" : state == 3 ? "Occupied" :
+                        booking >= 0 ? service.ReservationPending(booking) ? "Request" : "Reserved" : state == 5 ? "Dirty" : "";
                     if (BookingButton(cell, caption, highlighted ? DeskPriority : DeskStates[state]))
                     {
                         if (state == 3)
                             SelectStay(room);
                         else if (booking >= 0)
                             SelectBooking(service, booking);
-                        else if (state == 1 && calendarOffset + day <= 7)
-                        {
-                            bookingRoom = room;
-                            bookingLead = calendarOffset + day;
-                            bookingFeedback = null;
-                            reservationView = ReservationView.New;
-                        }
+                        else if (state == 1 || state == 5)
+                            BeginBooking(service, first + day, room);
                     }
                 }
                 y += row;
             }
             if (shown == 0)
                 DrawFittedText(new Rect(area.x, y, area.width, 28 * scale), "No rooms match this filter.", detail);
-            float cellWidth = area.width / 4;
-            for (int state = 1; state <= 4; state++)
+            float cellWidth = area.width / 5;
+            for (int state = 1; state <= 5; state++)
             {
                 float x = area.x + (state - 1) * cellWidth;
                 Fill(new Rect(x, area.yMax - 13 * scale, 10 * scale, 10 * scale), DeskStates[state]);
@@ -329,22 +338,28 @@ namespace DesertLantern
 
         private void DrawReservationList(Rect area, float scale, MotelService service)
         {
+            int today = service.ClockMinute / MotelService.MinutesPerDay;
+            bool daily = reservationView == ReservationView.Arrivals || reservationView == ReservationView.Departures;
+            if (daily && BookingButton(new Rect(area.xMax - 66 * scale, area.y, 30 * scale, 26 * scale), "<", DeskSurface))
+                rosterOffset = Mathf.Max(0, rosterOffset - 1);
+            if (daily && BookingButton(new Rect(area.xMax - 32 * scale, area.y, 30 * scale, 26 * scale), ">", DeskSurface))
+                rosterOffset = Mathf.Min(13, rosterOffset + 1);
+            int day = today + rosterOffset;
             string heading = reservationView switch
             {
-                ReservationView.Arrivals => "Arrivals today",
-                ReservationView.Departures => "Departures today",
+                ReservationView.Arrivals => $"Arrivals · Day {day + 1}",
+                ReservationView.Departures => $"Departures · Day {day + 1}",
                 ReservationView.Requests => "Reservation requests",
                 _ => "All reservations"
             };
-            DrawFittedText(new Rect(area.x, area.y, area.width, 28 * scale), heading, detail);
-            int today = service.ClockMinute / MotelService.MinutesPerDay;
+            DrawFittedText(new Rect(area.x, area.y, area.width - (daily ? 72 * scale : 0), 28 * scale), heading, detail);
             float row = 28 * scale;
             int entries = 0;
             for (int index = 0; index < service.ReservationCount; index++)
-                if (ShowReservation(service, index, today))
+                if (ShowReservation(service, index, day))
                     entries++;
             for (int room = 0; room < service.RoomCapacity; room++)
-                if (ShowStay(service, room, today))
+                if (ShowStay(service, room, day))
                     entries++;
             if (entries == 0)
             {
@@ -358,19 +373,23 @@ namespace DesertLantern
             int selected = SelectedBooking(service);
             for (int index = 0; index < service.ReservationCount; index++)
             {
-                if (!ShowReservation(service, index, today))
+                if (!ShowReservation(service, index, day))
                     continue;
                 int room = service.ReservationRoom(index);
-                string name = $"Room {room + 1}   ·   {service.ReservationChannel(index)}   ·   {MotelService.DisplayTime(service.ReservationStart(index))}";
+                int start = service.ReservationStart(index);
+                int end = service.ReservationEnd(index);
+                string name = $"{service.ReservationGuest(index)} · Room {room + 1} · {service.ReservationChannel(index)} · " +
+                    $"{MotelService.StayNights(start, end)}n · {MotelService.DisplayTime(reservationView == ReservationView.Departures ? end : start)}";
                 if (BookingButton(new Rect(0, y, width, row - 3 * scale), name, index == selected ? DeskPriority : DeskReserved))
                     SelectBooking(service, index);
                 y += row;
             }
             for (int room = 0; room < service.RoomCapacity; room++)
             {
-                if (!ShowStay(service, room, today))
+                if (!ShowStay(service, room, day))
                     continue;
-                string name = $"{GuestNames[room]}   ·   Room {room + 1}   ·   Out {MotelService.DisplayTime(service.DepartureMinute(room))}";
+                string name = $"{service.StayGuest(room)} · Room {room + 1} · {service.StaySource(room)} · " +
+                    $"{MotelService.StayNights(service.StayStart(room), service.DepartureMinute(room))}n · Out {MotelService.DisplayTime(service.DepartureMinute(room))}";
                 bool current = room == selectedRoom && selectedArrival < 0;
                 if (BookingButton(new Rect(0, y, width, row - 3 * scale), name, current ? DeskPriority : DeskOccupied))
                     SelectStay(room);
@@ -379,22 +398,31 @@ namespace DesertLantern
             GUI.EndScrollView();
         }
 
-        private bool ShowReservation(MotelService service, int index, int today) => reservationView switch
+        private static bool IsExpectedArrival(MotelService service, int index) =>
+            !service.ReservationPending(index) || service.ReservationChannel(index) == BookingChannel.WalkIn;
+
+        private bool ShowReservation(MotelService service, int index, int day) => reservationView switch
         {
-            ReservationView.Requests => service.ReservationPending(index),
-            ReservationView.Arrivals => !service.ReservationPending(index) &&
-                (service.ReservationStart(index) / MotelService.MinutesPerDay == today || index == FindArrivalBooking(service)),
-            ReservationView.Departures => false,
+            ReservationView.Requests => service.ReservationPending(index) && service.ReservationChannel(index) != BookingChannel.WalkIn,
+            ReservationView.Arrivals => IsExpectedArrival(service, index) &&
+                (service.ReservationStart(index) / MotelService.MinutesPerDay == day ||
+                    day == service.ClockMinute / MotelService.MinutesPerDay && index == FindArrivalBooking(service)),
+            ReservationView.Departures => !service.ReservationPending(index) &&
+                service.ReservationEnd(index) / MotelService.MinutesPerDay == day,
             _ => true
         };
 
-        private bool ShowStay(MotelService service, int room, int today) => (service.ActiveRooms & (1 << room)) != 0 &&
-            (reservationView == ReservationView.All || reservationView == ReservationView.Departures &&
-                service.DepartureMinute(room) / MotelService.MinutesPerDay <= today);
+        private bool ShowStay(MotelService service, int room, int day)
+        {
+            int departure = service.DepartureMinute(room) / MotelService.MinutesPerDay;
+            return (service.ActiveRooms & (1 << room)) != 0 && (reservationView == ReservationView.All ||
+                reservationView == ReservationView.Departures && (departure == day ||
+                    departure < day && day == service.ClockMinute / MotelService.MinutesPerDay));
+        }
 
         private void DrawReservationDetails(Rect area, float scale, MotelService service)
         {
-            DrawFittedText(new Rect(area.x, area.y, area.width, 27 * scale), "Reservation details", detail);
+            DrawFittedText(new Rect(area.x, area.y, area.width, 27 * scale), reservationEditFeedback ?? "Reservation details", detail);
             int index = SelectedBooking(service);
             bool stay = selectedArrival < 0 && selectedRoom >= 0 && (service.ActiveRooms & (1 << selectedRoom)) != 0;
             if (index < 0 && !stay)
@@ -406,15 +434,17 @@ namespace DesertLantern
 
             int room = selectedRoom;
             bool pending = index >= 0 && service.ReservationPending(index);
-            bool atReception = index >= 0 && index == FindArrivalBooking(service) && service.ArrivalReady(room);
+            bool atReception = index >= 0 && index == FindArrivalBooking(service) && service.DeskArrivalReady(room);
             bool checkout = stay && room == visitorRoom && CheckoutVisitor && VisitorAtDesk;
             int start = stay ? service.StayStart(room) : service.ReservationStart(index);
             int end = stay ? service.DepartureMinute(room) : service.ReservationEnd(index);
             int rate = stay ? service.StayRate(room) : service.ReservationRate(index);
-            int nights = Mathf.Max(1, end / MotelService.MinutesPerDay - start / MotelService.MinutesPerDay);
-            string status = pending ? "Awaiting confirmation" : atReception ? deskCheckInApproved ? "Key handoff pending" : "Waiting at reception" :
-                stay ? checkout ? "Ready to check out" : service.ClockMinute >= end ? "Coming to reception" : "Checked in" : "Confirmed";
-            string name = stay || atReception ? GuestNames[room] : service.ReservationChannel(index).ToString() + " booking";
+            int nights = MotelService.StayNights(start, end);
+            bool walkIn = pending && service.ReservationChannel(index) == BookingChannel.WalkIn;
+            string status = atReception ? deskCheckInApproved ? "Key handoff pending" : walkIn ? $"Walk-in requests {nights} nights" : "Waiting at reception" :
+                pending ? "Awaiting confirmation" : stay ? checkout ? "Ready to check out" : service.ClockMinute >= end ? "Coming to reception" : "Occupied" : "Reserved";
+            string name = stay ? service.StayGuest(room) : service.ReservationGuest(index);
+            string source = stay ? service.StaySource(room) : service.ReservationChannel(index).ToString();
             Rect summary = new Rect(area.x, area.y + 28 * scale, area.width, 75 * scale);
             DeskFrame(summary, DeskPaper, DeskGold, 6 * scale, 1);
             Rect contents = InsetDesk(summary, 6 * scale);
@@ -422,17 +452,18 @@ namespace DesertLantern
             deskPaperText.fontSize = detail.fontSize;
             deskPaperText.normal.textColor = Ink;
             float split = contents.width / 2;
-            DrawFittedText(new Rect(contents.x, contents.y, split, 22 * scale), $"{name} · Room {room + 1}", deskPaperText);
-            DrawFittedText(new Rect(contents.x + split, contents.y, split, 22 * scale), status, deskPaperText);
+            DrawFittedText(new Rect(contents.x, contents.y, split, 22 * scale), $"{name} · Room {room + 1} · {source}", deskPaperText);
+            string condition = service.RoomUnusable(room) ? " · Unavailable" :
+                service.RoomDirty(room) ? " · Dirty" : "";
+            DrawFittedText(new Rect(contents.x + split, contents.y, split, 22 * scale), status + condition, deskPaperText);
             DrawFittedText(new Rect(contents.x, contents.y + 21 * scale, split, 22 * scale),
                 $"Check-in  {MotelService.DisplayTime(start)}", deskPaperText);
             DrawFittedText(new Rect(contents.x + split, contents.y + 21 * scale, split, 22 * scale),
                 $"Check-out  {MotelService.DisplayTime(end)}", deskPaperText);
             DrawFittedText(new Rect(contents.x, contents.y + 42 * scale, split, 22 * scale),
                 $"${rate}/night · {nights} {(nights == 1 ? "night" : "nights")} · ${rate * nights} total", deskPaperText);
-            if (!stay)
-                DrawFittedText(new Rect(contents.x + split, contents.y + 42 * scale, split, 22 * scale),
-                    MotelService.PreferenceLabel(service.ReservationPreference(index)), deskPaperText);
+            DrawFittedText(new Rect(contents.x + split, contents.y + 42 * scale, split, 22 * scale),
+                stay ? service.StayRequest(room) : MotelService.PreferenceLabel(service.ReservationPreference(index)), deskPaperText);
 
             var actions = new Rect(area.x, area.yMax - 29 * scale, area.width, 29 * scale);
             if (stay)
@@ -440,29 +471,29 @@ namespace DesertLantern
                 if (checkout && DeskActionButton(actions, 0, 2, "Check out", DeskPriority, scale))
                     RequestBookingAction(DeskCheckOutAction, new Vector3(room, end, service.GuestId(room)));
                 if (DeskActionButton(actions, 1, 2, "Extend stay", DeskSurface, scale))
-                    RequestBookingAction(EditBookingAction, new Vector3(room, 6, 0));
+                    RequestBookingAction(EditBookingAction, new Vector3(room + 6 * MotelService.RoomCount, end, service.GuestId(room)));
                 return;
             }
             if (atReception)
             {
                 if (deskCheckInApproved)
                     DrawFittedText(actions, "Pick up the room key and hand it to the guest.", label);
-                else if (BookingButton(actions, "Check in", DeskPriority))
+                else if (BookingButton(actions, walkIn ? "Confirm room and check in" : "Check in", DeskPriority))
                     RequestBookingAction(DeskCheckInAction, new Vector3(room, start, end));
                 return;
             }
+            if (walkIn)
+                return;
             if (editingReservation)
             {
-                string[] changes = { "Arrival +15 min", "Arrival -15 min", "Add night", "Remove night", "Change room", "Done" };
+                string[] changes = { "Arrival +15 min", "Arrival -15 min", "Add night", "Remove night", "Next free room", "Done" };
                 for (int item = 0; item < changes.Length; item++)
                     if (DeskActionButton(actions, item, changes.Length, changes[item], DeskSurface, scale))
                     {
                         if (item < 5)
                         {
-                            RequestBookingAction(EditBookingAction, new Vector3(index, item + 1, start));
-                            MotelService updated = Service;
-                            if (index < updated.ReservationCount)
-                                SelectBooking(updated, index);
+                            RequestBookingAction(EditBookingAction,
+                                new Vector3(room + (item + 1) * MotelService.RoomCount, start, end));
                         }
                         editingReservation = item < 5;
                     }
@@ -472,8 +503,8 @@ namespace DesertLantern
             {
                 if (DeskActionButton(actions, 0, 2, "Confirm cancellation", DeskDanger, scale))
                 {
-                    RequestBookingAction(EditBookingAction, new Vector3(index, 0, start));
-                    SelectStay(NoRoom);
+                    confirmingCancellation = false;
+                    RequestBookingAction(EditBookingAction, new Vector3(room, start, end));
                 }
                 if (DeskActionButton(actions, 1, 2, "Keep reservation", DeskSurface, scale))
                     confirmingCancellation = false;

@@ -113,7 +113,11 @@ connections. The host allocates four player slots and owns avatar movement,
 collision, active escorts, room occupancy, cash, door state, suitcase
 ownership, supply orders, crate ownership, and supply stock. `LanWorldState` is a registered
 NetworkObject. Its player list and motel NetworkVariable are the initial
-state for late joiners and current state for connected clients.
+state for late joiners and current state for connected clients. The host
+validates reservation availability and reception actions, then synchronizes
+the results. The host's LAN motel saves locally between sessions, including
+reservations and online approval settings. LAN and county campaign saves
+use separate slots.
 
 `InputInterval` sends input at 30 Hz and `InputTimeout` stops remote keyboard
 movement after 300 ms without input. `SnapshotInterval` is 15 Hz. Clients

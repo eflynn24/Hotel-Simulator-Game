@@ -435,7 +435,7 @@ namespace DesertLantern
             if (lan == null)
                 Campaign.Advance(service.ClockMinute, service.Property, previous);
             service = Service;
-            if (guest != null && (!service.ArrivalReady(Occupied) || service.BookingStart(Occupied) != guestArrivalMinute))
+            if (guest != null && !escorting && (!service.DeskArrivalReady(Occupied) || service.BookingStart(Occupied) != guestArrivalMinute))
             {
                 guest.Dispose();
                 guest = null;

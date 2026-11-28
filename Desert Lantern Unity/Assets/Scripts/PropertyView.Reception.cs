@@ -7,7 +7,7 @@ namespace DesertLantern
     {
         private const byte SelectKeyAction = 16;
         private readonly Dictionary<ulong, int> selectedKeys = new Dictionary<ulong, int>();
-        private static readonly Vector3 KeyPickupPoint = new Vector3(-9.69f, 0, 6.66f);
+        private static readonly Vector3 KeyPickupPoint = new Vector3(-9.43f, 0, MotelWorld.ReceptionBackWall - .52f);
 
         private static bool AtKeyCounter(Vector3 point) =>
             InsideOffice(point) && MotelWalker.Distance(point, KeyPickupPoint) < .48f;
@@ -23,7 +23,7 @@ namespace DesertLantern
             if (!GuestWaiting || !InsideOffice(caretaker.Position))
                 return;
 
-            if (deskCheckInApproved && DrawWorldButton(new Vector3(-9.43f, 1.99f, 8.39f), "Room keys", 90 * scale, scale))
+            if (deskCheckInApproved && DrawWorldButton(new Vector3(-9.43f, 1.99f, 8.39f + MotelWorld.ReceptionExtension), "Room keys", 90 * scale, scale))
             {
                 if (AtKeyCounter(caretaker.Position))
                     SetReceptionPanel(ReceptionPanel.Keys);
@@ -31,8 +31,14 @@ namespace DesertLantern
                     SetDestination(KeyPickupPoint);
             }
 
-            string name = GuestNames[Occupied];
-            string caption = $"{name} · Room {Occupied + 1}";
+            MotelService service = Service;
+            int index = FindArrivalBooking(service);
+            if (index < 0)
+                return;
+            string name = service.ReservationGuest(index);
+            string caption = service.ReservationPending(index) && service.ReservationChannel(index) == BookingChannel.WalkIn
+                ? $"{name} · Wants {MotelService.StayNights(service.ReservationStart(index), service.ReservationEnd(index))} nights"
+                : $"{name} · Room {Occupied + 1}";
             if (Service.ReturningGuest(Occupied))
                 caption += " · Returning";
             int waiting = Mathf.Max(0, Service.ClockMinute - guestWaitStart);
@@ -58,8 +64,6 @@ namespace DesertLantern
         private int inspectedGuest;
         private int pinnedRoom = NoRoom;
         private int pinnedGuestId;
-        private static readonly string[] GuestNames =
-            { "Mara Ortiz", "Eli Brooks", "June Park", "Vic Ramos", "Nora Reed", "Sam Bell", "Lena Ruiz", "Tess Lane", "Rae King", "Luis Webb", "Jo Chen", "Max Vega" };
         private int notebookTab;
         private Vector2 notebookScroll;
         private const byte StaffAction = 20;
@@ -158,7 +162,7 @@ namespace DesertLantern
                 if (actor == null || !MotelWorld.NearFloor(caretaker.Position, actor.Position) ||
                     MotelWalker.Distance(caretaker.Position, actor.Position) > 3f)
                     continue;
-                string caption = $"{GuestNames[room]} · Room {room + 1}";
+                string caption = $"{service.StayGuest(room)} · Room {room + 1}";
                 if (service.RequestOpen(room) || service.OutstandingIssue(room) != GuestIssue.None)
                     caption += " · !";
                 if (DrawWorldButton(actor.Position + Vector3.up * 1.73f, caption, 154 * scale, scale))
@@ -183,7 +187,7 @@ namespace DesertLantern
                 : receptionPanel == ReceptionPanel.Phone ? "Reception telephone"
                 : receptionPanel == ReceptionPanel.Keys ? "Room keys"
                 : receptionPanel == ReceptionPanel.Maintenance ? "Maintenance"
-                : receptionPanel == ReceptionPanel.Portfolio ? "Management phone" : GuestNames[inspectedGuest];
+                : receptionPanel == ReceptionPanel.Portfolio ? "Management phone" : Service.StayGuest(inspectedGuest);
             DrawFittedText(new Rect(left, panel.y + 12 * scale, width, 49 * scale), heading, title);
             var area = new Rect(left, panel.y + 68 * scale, width, 292 * scale);
             if (receptionPanel == ReceptionPanel.Notebook)
@@ -231,14 +235,26 @@ namespace DesertLantern
             MotelService service = Service;
             if (service.CanBookPhoneFor(LocalWorker))
             {
-                DrawFittedText(new Rect(area.x, area.y, area.width, 27 * scale), "Caller wants to book a room", detail);
-                DrawBookingForm(new Rect(area.x, area.y + 34 * scale, area.width, 65 * scale), scale, true);
+                int start = service.PhoneArrival;
+                int end = MotelService.DepartureForNights(start, service.PhoneNights);
+                int room = service.SuggestRoom(start, end);
+                DrawFittedText(new Rect(area.x, area.y, area.width, 27 * scale),
+                    $"I'd like {service.PhoneNights} nights from {MotelService.DisplayTime(start)}.", detail);
+                DrawFittedText(new Rect(area.x, area.y + 28 * scale, area.width, 25 * scale),
+                    MotelService.PreferenceLabel(service.PhonePreference), label);
+                string quote = room == NoRoom ? "No rooms available for this stay" :
+                    $"Room {room + 1} · ${service.NightlyRate(room)}/night · ${service.NightlyRate(room) * service.PhoneNights} total";
+                DrawFittedText(new Rect(area.x, area.y + 55 * scale, area.width, 25 * scale), quote, label);
+                GUI.enabled = room != NoRoom;
+                if (DrawButton(new Rect(area.x, area.y + 86 * scale, area.width, 32 * scale), "Accept telephone reservation"))
+                    RequestBookingAction(AcceptPhoneAction, new Vector3(room, service.NextPhoneCall, 0));
+                GUI.enabled = true;
             }
             else
             {
                 string status = service.CanBookPhone ? "A coworker is handling the booking call." :
                     service.BookingCallRinging ? "Incoming reservation call" : service.PhoneRinging ? "Incoming guest call" :
-                    bookingFeedback == "Phone request sent to Reservations" ? bookingFeedback : "No caller on the line";
+                    bookingFeedback == "Telephone reservation confirmed" ? bookingFeedback : "No caller on the line";
                 DrawFittedText(new Rect(area.x, area.y, area.width, 27 * scale), status, label);
                 if (service.PhoneRinging && DrawButton(new Rect(area.x, area.y + 34 * scale, area.width, 30 * scale), "Answer call"))
                     RequestGuestAction(AnswerPhoneAction);
@@ -315,7 +331,7 @@ namespace DesertLantern
                 {
                     string request = service.NotebookRequest(room);
                     if (notebookTab == 0 && (service.ActiveRooms & (1 << room)) != 0)
-                        rows.Add(($"{GuestNames[room]} · Room {room + 1} · {ActivityLabel(service.Activity(room))}", NoRoom));
+                        rows.Add(($"{service.StayGuest(room)} · Room {room + 1} · {ActivityLabel(service.Activity(room))}", NoRoom));
                     else if (notebookTab == 1 && service.HousekeepingRequested(room))
                         rows.Add(($"Room {room + 1} · Housekeeping requested", NoRoom));
                     if (notebookTab == 1 && request != null)
